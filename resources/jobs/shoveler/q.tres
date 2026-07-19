@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="ShovelerQ" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/jobs/shoveler/q.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+particle_count_min = 70
+particle_count_max = 100
+speed_min = 220.0
+speed_max = 520.0
+spread_angle_deg = 50.0
+spawn_offset = 20.0

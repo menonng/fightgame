@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="SwordsmanE" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/jobs/swordsman/e.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+hit_damage_pct = 0.1
+dot_tick_damage = 0.005
+dot_duration = 10.0
+dot_tick_rate = 0.25
+speed_buff_pct = 1.0
+speed_buff_dur = 1.0
+sword_width = 26
+sword_height = 180
+fall_speed_base = 20.0
+fall_speed_exp_rate = 2.2
+spawn_screen_offset = 220.0

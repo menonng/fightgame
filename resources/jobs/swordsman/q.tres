@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="SwordsmanQ" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/jobs/swordsman/q.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+duration = 5.0
+inc_attack = 1.1
+dec_dmg_taken = 0.7
+dec_move = 0.9
+dec_atk_speed = 0.8
+cast_fx_time = 0.6

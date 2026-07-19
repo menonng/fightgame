@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="SwordsmanR" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/jobs/swordsman/r.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+duration = 5.0
+tick_damage = 70.0
+tick_interval = 0.5
+spin_speed_deg = 720.0
+inc_move = 0.5
+dmg_mult = 0.6

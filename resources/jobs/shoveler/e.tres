@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="ShovelerE" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/jobs/shoveler/e.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+tomb_w = 56
+tomb_h = 86
+spawn_offset_x = 70.0
+ground_search_range = 40
+hit_damage = 100.0
+rise_speed = 400.0
+solid_duration = 5.0

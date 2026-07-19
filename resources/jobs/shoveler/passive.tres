@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="ShovelerPassive" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/jobs/shoveler/passive.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+max_stacks = 5
+stack_duration = 20.0
+bury_duration_normal = 3.0
+bury_mult_normal = 1.5
+bury_duration_r = 10.0
+bury_mult_r = 2.5
+immunity_duration = 20.0
+dust_lock_duration = 5.0
+slow_mult = 0.9
+slow_duration = 5.0

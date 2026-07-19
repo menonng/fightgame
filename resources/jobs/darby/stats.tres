@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="DarbyStats" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/jobs/darby/stats.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+roll_attack_min = 5
+roll_attack_max = 100
+roll_hp_min = 300
+roll_hp_max = 1000
+roll_range_min = 10
+roll_range_max = 100
+roll_speed_min = 100
+roll_speed_max = 500
+roll_atk_spd_min = 0.5
+roll_atk_spd_max = 2.5
+roll_speed_floor = 180.0
+passive_cd = 10.0
+q_cd_base = 0.0
+e_cd = 17.0
+r_cd = 120.0
+passive_name = "난 최강의 도박꾼이다아아아아아아"
+passive_desc = "현재 스탯 중 하나를 골라 그 값에 비례한 이속 버프를 4초간 획득합니다. 어느 스탯이 선택될지는 알 수 없습니다."
+q_name = "레레레레레레레레레레이즈라고！?!!!"
+q_desc = "대상에게 카지노 칩을 연속으로 던집니다. 칩의 수, 피해, 속도, 쿨다운은 현재 스탯 기반으로 결정되는 마법 피해입니다."
+e_name = "「Good.」"
+e_desc = "현재 스탯 중 하나를 골라 그 값에 비례한 이속 버프를 4초간 획득합니다. 어느 스탯이 선택될지는 알 수 없습니다."
+r_name = "영혼은 받아가마!"
+r_desc = "14초간 아우라를 펼칩니다. 적과 접촉 시 스탯을 훔쳐 적은 30초간 약화, 다비는 60초간 2배 강화됩니다."
+basic_dmg_types = Array[String](["physical"])
+q_dmg_types = Array[String](["magical"])

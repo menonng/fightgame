@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="SwordsmanPassive" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/jobs/swordsman/passive.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+revive_duration = 5.0
+damage_mult = 0.1
+heal_rate = 0.2

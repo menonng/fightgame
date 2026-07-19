@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="WindArcherQ" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/jobs/wind_archer/q.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+duration = 4.0
+strong_phase_threshold = 3.0
+dmg_red_strong = 0.5
+dmg_types_strong = Array[String](["physical"])
+dmg_red_normal = 0.15
+dmg_types_normal = Array[String](["physical"])

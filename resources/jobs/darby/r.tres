@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="DarbyR" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/jobs/darby/r.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+duration = 14.0
+steal_attack = 0.1
+steal_hp = 0.2
+steal_speed = 0.15
+steal_atk_spd = 0.1
+debuff_duration = 30.0
+bonus_duration = 60.0
+bonus_mult = 2.0
+tint_color = Color(0.314, 0.824, 0.902, 1.0)

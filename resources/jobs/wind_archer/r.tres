@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="WindArcherR" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/jobs/wind_archer/r.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+proj_speed = 850.0
+proj_damage = 400.0
+proj_radius = 44
+proj_life = 2.2
+proj_color = Color(0.471, 1.0, 0.824, 1.0)
+airborne_duration = 0.6
+knockback_dist = 220.0
+spawn_offset_x = 40.0
+spawn_offset_y = -12.0
+dmg_types = Array[String](["physical"])
