@@ -4,6 +4,19 @@ extends Node
 
 var selected_job: String = "swordsman"
 
+# ── 글로벌 연출 트리거 ────────────────────────────────────────────────────────
+# game_scene을 직접 참조할 수 없는 스크립트(직업 스킬 Resource 등)도 화면 흔들림/
+# 히트스톱을 요청할 수 있도록 시그널로 중계한다. game_scene이 _ready()에서 구독해
+# 실제 카메라 오프셋/Engine.time_scale 처리를 담당한다.
+signal screen_shake_requested(strength: float, duration: float)
+signal hitstop_requested(duration: float)
+
+func request_screen_shake(strength: float, duration: float) -> void:
+	screen_shake_requested.emit(strength, duration)
+
+func request_hitstop(duration: float) -> void:
+	hitstop_requested.emit(duration)
+
 const PALETTE: Array = [
 	Color(0.22, 0.77, 0.73), Color(0.85, 0.00, 0.00), Color(0.00, 0.00, 1.00),
 	Color(1.00, 0.65, 0.00), Color(1.00, 0.89, 0.07), Color(1.00, 0.75, 0.80),

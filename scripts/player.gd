@@ -15,6 +15,10 @@ var team: String    = "blue"
 var is_human: bool  = true
 var facing: int     = 1
 var aim_dir: Vector2 = Vector2.RIGHT   ## 탑다운 360도 조준 방향 (마우스 방향), 매 프레임 game_scene이 갱신
+## 마우스 데드존 보정: game_scene은 마우스가 데드존(캐릭터 중심 반경) 밖에 있을 때만
+## aim_dir/last_valid_mouse_world를 갱신한다. 데드존 안에서는 마지막 유효 값을 그대로 유지해
+## 커서가 캐릭터 위에 있을 때 조준 방향이 급격히 뒤틀리는 것을 방지한다.
+var last_valid_mouse_world: Vector2 = Vector2.ZERO
 
 var rect      := Rect2i(0, 0, 40, 60)
 var prev_rect := Rect2i(0, 0, 40, 60)
@@ -166,6 +170,8 @@ var _tex_wind_r_arrow: ImageTexture  = null
 func setup(p_job: Dictionary, sx: int, sy: int, p_team: String, p_human: bool) -> void:
 	job = p_job; team = p_team; is_human = p_human; facing = 1
 	rect = Rect2i(sx, sy, 40, 60); prev_rect = rect
+	aim_dir = Vector2.RIGHT
+	last_valid_mouse_world = Vector2(rect.get_center()) + aim_dir
 	base_attack       = float(job.get("attack",       10.0))
 	base_speed        = float(job.get("move_speed",  200.0))
 	base_range        = float(job.get("range_px",     60.0))
@@ -330,15 +336,15 @@ var scene_ref: Node2D     = null   ## game_scene 참조 — 발사체가 카메�
 var is_attacking: bool    = false  ## 공격 시퀀스 진행 중이면 이동 불가
 var _melee_hitbox: Area2D = null   ## 현재 활성화된 근거리 히트박스 (없으면 null)
 
-## 좌클릭 시 game_scene이 호출하는 진입점. mouse_world: 마우스의 월드 좌표.
-func perform_basic_attack(mouse_world: Vector2) -> bool:
+## 좌클릭 시 game_scene이 호출하는 진입점. 방향은 aim_dir(이미 마우스 데드존 보정이
+## 적용된 값)을 그대로 사용해 커서가 캐릭터 근처에 있어도 방향이 뒤틀리지 않는다.
+func perform_basic_attack() -> bool:
 	if revive_active or dead: return false
 	if attack_lock_time > 0.0 or move_lock_time > 0.0: return false
 	if attack_cd_rem > 0.0: return false
 
 	var origin := Vector2(rect.get_center())
-	var dir := mouse_world - origin
-	dir = dir.normalized() if dir.length() > 0.01 else Vector2(float(facing), 0.0)
+	var dir := aim_dir.normalized() if aim_dir.length() > 0.01 else Vector2(float(facing), 0.0)
 	facing = 1 if dir.x >= 0.0 else -1
 
 	attack_cd_rem = attack_cd

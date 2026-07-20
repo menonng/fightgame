@@ -43,9 +43,29 @@ var _tooltip_visible: bool  = false
 # ── 피해 텍스트 ───────────────────────────────────────────────────────────────
 var dmg_texts: Array = []   # [{text,wx,wy,t}]
 
-# ── 카메라 ────────────────────────────────────────────────────────────────────
+# ── 카메라 / 화면 흔들림 ─────────────────────────────────────────────────────
 var cam_x: float = 0.0; var cam_y: float = 0.0
 const SCR_W := 1280; const SCR_H := 720
+var shake_time: float     = 0.0   ## 남은 흔들림 시간 (초)
+var shake_strength: float = 0.0   ## 현재 흔들림 진폭 (픽셀)
+
+# ── 타격감 (히트스톱) ─────────────────────────────────────────────────────────
+const HITSTOP_DURATION := 0.045   ## 적중 시 정지시간(초, 실시간 기준 — Engine.time_scale과 무관)
+var _hitstop_active: bool = false
+
+# ── 대난투 속도감 (적중 시 궁극기 쿨감) ──────────────────────────────────────
+const ULT_CDR_ON_HIT := 1.0   ## 평타/Q/E/R 등 단발 적중마다 R 쿨타임 즉시 감소량(초)
+
+# ── 특정 스킬 적중 시 화면 흔들림 ────────────────────────────────────────────
+const WIND_R_SHAKE_STRENGTH := 10.0; const WIND_R_SHAKE_DURATION := 0.25
+const SHOVEL_ENHANCED_SHAKE_STRENGTH := 14.0; const SHOVEL_ENHANCED_SHAKE_DURATION := 0.3
+
+# ── 마우스 데드존 ─────────────────────────────────────────────────────────────
+const MOUSE_DEADZONE_RADIUS := 40.0   ## 캐릭터 중심 기준 이 반경 이내면 조준 방향을 갱신하지 않음
+
+# ── 선입력(Input Buffer) ─────────────────────────────────────────────────────
+const INPUT_BUFFER_WINDOW := 0.1   ## 행동 잠금 종료 직전 이 구간 안에 들어온 입력만 버퍼링
+var _buffered_action: String = ""  ## "" | "attack" | "q" | "e" | "r"
 
 # ── 노드 ─────────────────────────────────────────────────────────────────────
 var _map_draw: Node2D     = null
@@ -75,6 +95,8 @@ func _ready() -> void:
 	player.setup(job, 160, WORLD_H - 80 - 60, "blue", true)
 	player.scene_ref = self
 	player.basic_attack_hit.connect(_on_player_basic_attack_hit)
+	Global.screen_shake_requested.connect(_on_shake_requested)
+	Global.hitstop_requested.connect(_on_hitstop_requested)
 	# Darby: 게임 시작 시 스탯 초기화
 	if job.get("key") == "darby":
 		_darby_roll_stats(player, true)
@@ -122,18 +144,44 @@ func _build_map() -> void:
 	]
 
 # ── 피해 헬퍼 ─────────────────────────────────────────────────────────────────
-func _deal_damage(attacker, target, dmg: float, types: Array) -> float:
+## is_primary_hit: 평타/Q/E/R의 단발성 직접 적중이면 true(기본값) — 궁극기 쿨감 + 히트스톱 발동.
+## DoT 틱, 검사자 R처럼 짧은 간격으로 반복되는 판정은 연출 스팸을 막기 위해 false로 호출한다.
+func _deal_damage(attacker, target, dmg: float, types: Array, is_primary_hit: bool = true) -> float:
 	var mult := 1.0
 	var jk_a: String = attacker.job.get("key", "") if attacker != null and attacker.has_method("_draw") else ""
 	if jk_a == "shoveler":
 		mult = attacker.skill_passive.get_buried_damage_mult(target, attacker) if attacker.skill_passive != null else 1.0
 	var taken: float = target.apply_damage(dmg * mult, types)
 	_pop_dmg(float(target.rect.get_center().x), float(target.rect.position.y) - 10.0, taken)
+	if is_primary_hit and taken > 0.0:
+		_register_hit(attacker)
 	return taken
 
 func _pop_dmg(wx: float, wy: float, dmg: float) -> void:
 	if dmg <= 0.0: return
 	dmg_texts.append({"text": str(int(dmg)), "wx": wx, "wy": wy, "t": 0.8})
+
+## 모든 직업의 평타/Q/E/R 단발 적중 공통 처리 — 대난투 속도감을 위한 궁극기 쿨감 + 히트스톱.
+func _register_hit(attacker) -> void:
+	attacker.r_cd_rem = maxf(0.0, attacker.r_cd_rem - ULT_CDR_ON_HIT)
+	Global.request_hitstop(HITSTOP_DURATION)
+
+# ── 히트스톱 / 화면 흔들림 (Global 시그널 수신) ──────────────────────────────
+## Engine.time_scale을 잠깐 0으로 낮춰 애니메이션·이동을 전역 정지시킨다.
+## 정지 해제 타이머는 ignore_time_scale=true로 실시간을 기준으로 동작해야
+## time_scale=0 상태에서도 정상적으로 흘러 스스로 원상복구할 수 있다.
+func _on_hitstop_requested(duration: float) -> void:
+	if _hitstop_active: return
+	_hitstop_active = true
+	Engine.time_scale = 0.0
+	var t := get_tree().create_timer(duration, true, false, true)
+	t.timeout.connect(func():
+		Engine.time_scale = 1.0
+		_hitstop_active = false)
+
+func _on_shake_requested(strength: float, duration: float) -> void:
+	shake_strength = maxf(shake_strength, strength)
+	shake_time     = maxf(shake_time, duration)
 
 # ── Shovel 스택 / 매장 ────────────────────────────────────────────────────────
 func _apply_shovel_stack(owner, target, by_dust: bool = false, trigger_bury: bool = false) -> void:
@@ -200,19 +248,49 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_tree().change_scene_to_file("res://scenes/menu.tscn"); return
 		if event.keycode == KEY_F2: player.hp = 0.0; return
 		if player.dead or player.revive_active: return
-		if player.skill_lock_time <= 0.0:
-			if event.is_action("skill_q"): _press_q()
-			elif event.is_action("skill_e"): _press_e()
-			elif event.is_action("skill_r"): _press_r()
+		# Godot은 동시에 눌린 키마다 별도의 InputEventKey를 전달하므로 WASD와
+		# Q/E/R가 같은 프레임에 눌려도 서로를 막지 않고 모두 처리된다.
+		if event.is_action("skill_q"):
+			if _try_or_buffer("q"): _press_q()
+		elif event.is_action("skill_e"):
+			if _try_or_buffer("e"): _press_e()
+		elif event.is_action("skill_r"):
+			if _try_or_buffer("r"): _press_r()
 
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if not player.dead and not player.revive_active:
-			var mouse_world := get_viewport().get_mouse_position() + Vector2(cam_x, cam_y)
-			player.perform_basic_attack(mouse_world)
+			if _try_or_buffer("attack"): player.perform_basic_attack()
 
 	# 툴팁: 마우스 이동 or 버튼
 	if event is InputEventMouseMotion or event is InputEventMouseButton:
 		_update_tooltip(get_viewport().get_mouse_position())
+
+# ── 선입력(Input Buffer) ─────────────────────────────────────────────────────
+## 현재 조작 불가 상태(스윙/캐스팅 등)로 남아있는 잠금 시간 중 최댓값.
+func _player_action_lock() -> float:
+	return maxf(player.move_lock_time, maxf(player.attack_lock_time, player.skill_lock_time))
+
+## 지금 바로 실행 가능하면 true(즉시 실행하라는 뜻). 잠겨 있다면 잠금 종료가
+## 임박(INPUT_BUFFER_WINDOW 이내)했을 때만 버퍼에 기록하고 false를 반환한다.
+func _try_or_buffer(action: String) -> bool:
+	var lock := _player_action_lock()
+	if lock <= 0.0:
+		return true
+	if lock <= INPUT_BUFFER_WINDOW:
+		_buffered_action = action
+	return false
+
+## 매 프레임 호출 — 잠금이 막 풀린 시점에 버퍼된 입력이 있으면 지연 없이 실행.
+func _consume_input_buffer() -> void:
+	if _buffered_action == "" or _player_action_lock() > 0.0:
+		return
+	var action := _buffered_action
+	_buffered_action = ""
+	match action:
+		"attack": player.perform_basic_attack()
+		"q": _press_q()
+		"e": _press_e()
+		"r": _press_r()
 
 # ── 툴팁 ──────────────────────────────────────────────────────────────────────
 func _update_tooltip(mouse_pos: Vector2) -> void:
@@ -243,7 +321,11 @@ func _on_player_basic_attack_hit(target: Node2D, dmg: float, dmg_types: Array) -
 	if jk == "wind_archer":
 		player.wind_on_basic_hit()
 	elif jk == "shoveler":
+		# R로 예약된 강화 매장 공격인지 여부를 _apply_shovel_stack이 플래그를 소비하기 전에 캡처
+		var was_enhanced := player.shovel_r_armed
 		_apply_shovel_stack(player, target, false, true)
+		if was_enhanced:
+			Global.request_screen_shake(SHOVEL_ENHANCED_SHAKE_STRENGTH, SHOVEL_ENHANCED_SHAKE_DURATION)
 
 # ── 스킬 ──────────────────────────────────────────────────────────────────────
 func _press_q() -> void:
@@ -358,11 +440,20 @@ func _check_darby_q_confirm() -> void:
 func _process(dt: float) -> void:
 	var jk: String = player.job.get("key", "")
 
-	# 탑다운 360도 조준 방향 — 마우스 월드 좌표 기준, 매 프레임 갱신 (Q/E/R 스킬 각도 계산에 사용)
+	# 탑다운 360도 조준 방향 — 마우스 월드 좌표 기준, 매 프레임 갱신 (평타/Q/E/R 각도 계산에 사용).
+	# 데드존: 마우스가 캐릭터 중심 MOUSE_DEADZONE_RADIUS 반경 이내로 들어오면 방향을 갱신하지 않고,
+	# 데드존 진입 직전의 마지막 유효 방향/좌표(player.aim_dir / last_valid_mouse_world)를 그대로 유지한다.
+	# → 커서가 캐릭터 위에 있을 때 조준이 급격히 뒤틀리는 현상을 방지.
 	var mouse_world := get_viewport().get_mouse_position() + Vector2(cam_x, cam_y)
 	var to_mouse := mouse_world - Vector2(player.rect.get_center())
-	if to_mouse.length() > 0.01:
+	if to_mouse.length() > MOUSE_DEADZONE_RADIUS:
 		player.aim_dir = to_mouse.normalized()
+		player.last_valid_mouse_world = mouse_world
+
+	# 화면 흔들림 감쇠
+	if shake_time > 0.0:
+		shake_time = maxf(0.0, shake_time - dt)
+		if shake_time <= 0.0: shake_strength = 0.0
 
 	# 타겟팅 타이머
 	if targeting_active:
@@ -375,6 +466,9 @@ func _process(dt: float) -> void:
 	player.move_and_collide_map(dt, map_solids, map_bushes, WORLD_W, WORLD_H)
 	player.player_update(dt)
 
+	# 선입력 소비 — 이번 프레임에 행동 잠금이 막 풀렸다면 버퍼된 입력을 지연 없이 실행
+	_consume_input_buffer()
+
 	# Darby 패시브·Q큐·R스틸
 	if jk == "darby":
 		_darby_passive_update(player, dt)
@@ -386,7 +480,7 @@ func _process(dt: float) -> void:
 		while player.r_tick >= 0.5:
 			player.r_tick -= 0.5
 			if player.rect.intersects(dummy.rect):
-				_deal_damage(player, dummy, 70.0, player.job.get("r_dmg", ["physical"]))
+				_deal_damage(player, dummy, 70.0, player.job.get("r_dmg", ["physical"]), false)
 
 	# 부활 처리
 	if player.dead and player.respawn_time <= 0.0:
@@ -404,6 +498,7 @@ func _process(dt: float) -> void:
 			var did := dummy.get_instance_id()
 			if proj.alive and not (did in proj.hit_ids) and proj.collides_rect(dummy.rect):
 				_deal_damage(player, dummy, proj.damage, proj.dmg_types)
+				Global.request_screen_shake(WIND_R_SHAKE_STRENGTH, WIND_R_SHAKE_DURATION)
 				# 에어본(넉백+스턴) 적용 — 화살 진행 방향(vx,vy)으로 떠밀림
 				if proj.owner_node != null and proj.owner_node.skill_r != null:
 					var kb_dir := Vector2(proj.vx, proj.vy)
@@ -432,7 +527,7 @@ func _process(dt: float) -> void:
 			dot["tick"] = player.skill_e.dot_tick_rate
 			var tgt = dot["target"]
 			if tgt != null:
-				_deal_damage(player, tgt, max(1.0, float(tgt.hp) * player.skill_e.dot_tick_damage), dot["damage_types"])
+				_deal_damage(player, tgt, max(1.0, float(tgt.hp) * player.skill_e.dot_tick_damage), dot["damage_types"], false)
 
 	# Chip 투사체 (Darby Q)
 	for chip in chips.duplicate():
@@ -480,10 +575,16 @@ func _process(dt: float) -> void:
 	_hud.queue_redraw()
 
 # ── 카메라 ────────────────────────────────────────────────────────────────────
+func _current_shake_offset() -> Vector2:
+	if shake_time <= 0.0: return Vector2.ZERO
+	return Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * shake_strength
+
 func _update_camera() -> void:
 	cam_x = clampf(float(player.rect.get_center().x) - SCR_W / 2.0, 0.0, float(WORLD_W - SCR_W))
 	cam_y = clampf(float(player.rect.get_center().y) - SCR_H / 2.0, 0.0, float(WORLD_H - SCR_H))
-	var off := Vector2(-cam_x, -cam_y)
+	# 화면 흔들림은 렌더링 오프셋에만 더한다 — cam_x/cam_y 자체(마우스 월드 좌표 변환 등
+	# 게임플레이 로직이 참조하는 "논리적" 카메라 값)는 흔들림의 영향을 받지 않는다.
+	var off := Vector2(-cam_x, -cam_y) + _current_shake_offset()
 	player.position = Vector2(player.rect.position) + off
 	dummy.position  = Vector2(dummy.rect.position) + off
 	for proj in wind_ult_arrows:
