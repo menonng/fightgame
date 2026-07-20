@@ -62,6 +62,10 @@ var q_cd_rem: float       = 0.0
 var e_cd_rem: float       = 0.0
 var r_cd_rem: float       = 0.0
 var passive_cd_rem: float = 0.0
+## Darby Q처럼 매 시전마다 쿨타임 자체가 동적으로(스탯 기반) 다시 정해지는 직업을 위한
+## "이번에 뽑힌 총 쿨타임" 기록 — HUD가 job.get("q_cd")의 고정값 대신 이 값을 분모로 써서
+## 링/숫자 표시가 항상 0으로 나오지 않게 한다.
+var q_cd_full: float      = 0.0
 
 # ── Swordsman
 var q_buff_time: float       = 0.0

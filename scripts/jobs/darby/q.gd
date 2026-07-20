@@ -71,7 +71,8 @@ func activate(player, target) -> void:
 		"speed":    d["speed"],
 		"damage":   d["damage"],
 	}
-	player.q_cd_rem = d["cd"]
+	player.q_cd_rem  = d["cd"]
+	player.q_cd_full = d["cd"]
 
 func update_queue(player, dt: float, scene) -> void:
 	if player._darby_q_queue.is_empty():

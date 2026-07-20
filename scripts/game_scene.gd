@@ -808,9 +808,12 @@ func _draw_hud() -> void:
 	var keys  := ["P", "Q", "E", "R"]
 	var names := [job.get("passive_name","P"), job.get("q_name","Q"), job.get("e_name","E"), job.get("r_name","R")]
 	var cds   := [float(job.get("passive_cd",0.0)), float(job.get("q_cd",0.0)), float(job.get("e_cd",0.0)), float(job.get("r_cd",0.0))]
-	# Darby: passive CD는 패시브 타이머
+	# Darby: passive CD는 패시브 타이머, Q CD는 매 시전마다 스탯 기반으로 동적 재계산되므로
+	# job.get("q_cd")의 고정값(0.0) 대신 마지막으로 뽑힌 실제 쿨타임(q_cd_full)을 분모로 쓴다.
 	var p_cd_rem: float = player.passive_cd_rem
-	if jk == "darby": p_cd_rem = player._darby_passive_timer; cds[0] = 10.0
+	if jk == "darby":
+		p_cd_rem = player._darby_passive_timer; cds[0] = 10.0
+		cds[1] = player.q_cd_full
 	var rems  := [p_cd_rem, player.q_cd_rem, player.e_cd_rem, player.r_cd_rem]
 
 	for i in range(4):
