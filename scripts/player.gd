@@ -138,8 +138,8 @@ var visual_offset: Vector2 = Vector2.ZERO
 func play_airborne_visual(duration: float) -> void:
 	visual_offset = Vector2.ZERO
 	var peak := -48.0
-	var up_time := max(0.05, duration * 0.35)
-	var down_time := max(0.05, duration * 0.65)
+	var up_time: float = max(0.05, duration * 0.35)
+	var down_time: float = max(0.05, duration * 0.65)
 	var tw := create_tween()
 	tw.tween_property(self, "visual_offset:y", peak, up_time).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
 	tw.tween_property(self, "visual_offset:y", 0.0, down_time).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
@@ -243,13 +243,13 @@ func _sum_mods() -> Array:
 
 func refresh_stats() -> void:
 	var m := _sum_mods()
-	var eff_atk   := max(0.0,  base_attack + float(m[0]) - float(m[5]) + wind_bonus_attack)
-	var eff_range := max(1.0,  base_range  + float(m[2]) + wind_bonus_range)
-	var eff_spd   := max(10.0, base_speed  + float(m[3]) - float(m[7]))
-	var eff_as    := max(0.08, base_attack_speed + float(m[4]) - float(m[8]) + wind_bonus_attack_speed)
-	var old_max   := max(1.0, max_hp)
+	var eff_atk: float   = max(0.0,  base_attack + float(m[0]) - float(m[5]) + wind_bonus_attack)
+	var eff_range: float = max(1.0,  base_range  + float(m[2]) + wind_bonus_range)
+	var eff_spd: float   = max(10.0, base_speed  + float(m[3]) - float(m[7]))
+	var eff_as: float    = max(0.08, base_attack_speed + float(m[4]) - float(m[8]) + wind_bonus_attack_speed)
+	var old_max: float   = max(1.0, max_hp)
 	var ratio     := clampf(hp / old_max, 0.0, 1.0)
-	var eff_hp    := max(1.0, base_max_hp + float(m[1]) - float(m[6]))
+	var eff_hp: float    = max(1.0, base_max_hp + float(m[1]) - float(m[6]))
 	max_hp = eff_hp; hp = clampf(max_hp * ratio, 0.0, max_hp)
 	attack       = _apply_inc(eff_atk, inc_attack)
 	var spd      := _apply_inc(eff_spd, inc_move + (speed_buff_inc if speed_buff_time > 0.0 else 0.0))
@@ -262,7 +262,7 @@ func refresh_stats() -> void:
 
 func set_base_stats(atk: float, hp_val: float, rng: float, spd: float, asp: float) -> void:
 	base_attack = atk; base_range = rng; base_speed = spd; base_attack_speed = asp
-	var new_max := max(1.0, hp_val)
+	var new_max: float = max(1.0, hp_val)
 	var ratio   := clampf(hp / max(1.0, max_hp), 0.0, 1.0)
 	base_max_hp = new_max; max_hp = new_max; hp = max(1.0, min(max_hp, max_hp * ratio))
 	refresh_stats()
@@ -273,7 +273,7 @@ func add_speed_buff(inc_pct: float, dur: float) -> void:
 	refresh_stats()
 
 func apply_damage(dmg: float, dmg_types: Array = []) -> float:
-	var taken := max(0.0, dmg * (1.0 - minf(0.95, dec_damage_taken)))
+	var taken: float = max(0.0, dmg * (1.0 - minf(0.95, dec_damage_taken)))
 	var jk: String = job.get("key", "")
 	if jk == "wind_archer" and wind_q_active and skill_q != null:
 		# 피해 유형 체크와 감소 배율 계산을 모두 skill_q에 위임
@@ -444,7 +444,7 @@ func player_update(dt: float) -> void:
 	attack_cd_rem = max(0.0, attack_cd_rem - dt)
 	if basic_swing_time > 0.0:
 		basic_swing_time = max(0.0, basic_swing_time - dt)
-		var p := 1.0 - basic_swing_time / max(0.001, basic_swing_duration)
+		var p: float = 1.0 - basic_swing_time / max(0.001, basic_swing_duration)
 		basic_swing_angle = 180.0 * p if p < 0.5 else 90.0 * (1.0 - (p - 0.5) / 0.5)
 	else:
 		basic_swing_angle = 0.0

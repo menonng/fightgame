@@ -216,7 +216,7 @@ func _darby_passive_update(p, dt: float) -> void:
 
 func _darby_q_update(p, dt: float) -> void:
 	if p._darby_q_queue.is_empty(): return
-	var q := p._darby_q_queue
+	var q: Dictionary = p._darby_q_queue
 	q["t"] = float(q["t"]) + dt
 	while int(q["left"]) > 0 and float(q["t"]) >= float(q["interval"]):
 		q["t"] = float(q["t"]) - float(q["interval"])
@@ -294,7 +294,7 @@ func _consume_input_buffer() -> void:
 
 # ── 툴팁 ──────────────────────────────────────────────────────────────────────
 func _update_tooltip(mouse_pos: Vector2) -> void:
-	var job := player.job
+	var job: Dictionary = player.job
 	var icons := [
 		{"rect": Rect2(HUD_P_X, HUD_Y, HUD_SZ, HUD_SZ),
 		 "lines": ["P  " + job.get("passive_name",""), job.get("passive_desc","")]},
@@ -322,7 +322,7 @@ func _on_player_basic_attack_hit(target: Node2D, dmg: float, dmg_types: Array) -
 		player.wind_on_basic_hit()
 	elif jk == "shoveler":
 		# R로 예약된 강화 매장 공격인지 여부를 _apply_shovel_stack이 플래그를 소비하기 전에 캡처
-		var was_enhanced := player.shovel_r_armed
+		var was_enhanced: bool = player.shovel_r_armed
 		_apply_shovel_stack(player, target, false, true)
 		if was_enhanced:
 			Global.request_screen_shake(SHOVEL_ENHANCED_SHAKE_STRENGTH, SHOVEL_ENHANCED_SHAKE_DURATION)
@@ -346,7 +346,7 @@ func _press_q() -> void:
 				targeting_active = false
 		"shoveler":
 			if player.skill_q != null and player.skill_q.can_use(player):
-				var spawn_list := player.skill_q.get_spawn_list(player)
+				var spawn_list: Array = player.skill_q.get_spawn_list(player)
 				for sp in spawn_list:
 					var d := Node2D.new()
 					d.name = "DirtParticle"
@@ -380,7 +380,7 @@ func _press_e() -> void:
 				player.skill_e.activate(player)
 		"shoveler":
 			if player.skill_e != null and player.skill_e.can_use(player):
-				var sp := player.skill_e.get_spawn_params(player, map_solids, WORLD_H)
+				var sp: Dictionary = player.skill_e.get_spawn_params(player, map_solids, WORLD_H)
 				if (sp["hit_rect"] as Rect2i).intersects(dummy.rect):
 					_deal_damage(player, dummy, float(sp["damage"]), player.job.get("e_dmg", ["physical"]))
 					if player.skill_passive != null:
@@ -401,7 +401,7 @@ func _press_r() -> void:
 				player.skill_r.activate(player)
 		"wind_archer":
 			if player.skill_r != null and player.skill_r.can_use(player):
-				var sp := player.skill_r.get_spawn_params(player)
+				var sp: Dictionary = player.skill_r.get_spawn_params(player)
 				var proj := Node2D.new()
 				proj.name = "WindUltArrow"
 				proj.set_script(ProjScript)
@@ -510,7 +510,7 @@ func _process(dt: float) -> void:
 	# 검사자 E 장판 슬램 — Tween 착지 시점에 1회 광역 판정
 	for fx in sword_effects.duplicate():
 		if fx.consume_just_landed():
-			var hb := fx.hitbox_world()
+			var hb: Rect2i = fx.hitbox_world()
 			var did := dummy.get_instance_id()
 			if not (did in fx.hit_done) and hb.intersects(dummy.rect):
 				_deal_damage(player, dummy, dummy.max_hp * player.skill_e.hit_damage_pct, fx.dmg_types)
@@ -554,7 +554,7 @@ func _process(dt: float) -> void:
 
 	# Tombstone (Shoveler E)
 	for tomb in tombstones.duplicate():
-		var just_solid := tomb.tomb_update(dt)
+		var just_solid: bool = tomb.tomb_update(dt)
 		if just_solid and not (tomb.world_rect in map_solids):
 			map_solids.append(tomb.world_rect)
 		tomb.position = Vector2(tomb.world_rect.position) + Vector2(-cam_x, -cam_y)
@@ -618,7 +618,7 @@ func _ws(r) -> Rect2:
 func _draw_hud() -> void:
 	if _font == null: return
 	var jk: String = player.job.get("key", "")
-	var job        := player.job
+	var job: Dictionary = player.job
 
 	# 스킬 아이콘 4개 [P, Q, E, R]
 	var xs    := [HUD_P_X, HUD_Q_X, HUD_E_X, HUD_R_X]
@@ -626,7 +626,7 @@ func _draw_hud() -> void:
 	var names := [job.get("passive_name","P"), job.get("q_name","Q"), job.get("e_name","E"), job.get("r_name","R")]
 	var cds   := [float(job.get("passive_cd",0.0)), float(job.get("q_cd",0.0)), float(job.get("e_cd",0.0)), float(job.get("r_cd",0.0))]
 	# Darby: passive CD는 패시브 타이머
-	var p_cd_rem := player.passive_cd_rem
+	var p_cd_rem: float = player.passive_cd_rem
 	if jk == "darby": p_cd_rem = player._darby_passive_timer; cds[0] = 10.0
 	var rems  := [p_cd_rem, player.q_cd_rem, player.e_cd_rem, player.r_cd_rem]
 
@@ -704,7 +704,7 @@ func _draw_hud() -> void:
 
 	# Shoveler 스택
 	if jk == "shoveler":
-		var stk := dummy.shovel_stacks.size() if "shovel_stacks" in dummy else 0
+		var stk: int = dummy.shovel_stack_count()
 		if stk > 0:
 			_hud.draw_string(_font, Vector2(16.0,60.0),
 				"삽질 스택: %d / 5" % stk, HORIZONTAL_ALIGNMENT_LEFT,-1,15,Color(0.8,0.6,0.3))
@@ -740,7 +740,7 @@ func _draw_radial_cd(ix: float, iy: float, sz: float, pct: float) -> void:
 	_hud.draw_circle(Vector2(cx,cy), r, Color(0,0,0,0.627))
 	var clear := (1.0 - pct) * TAU
 	if clear > 0.001:
-		var start := -PI/2.0; var steps := max(16, int(clear*20.0))
+		var start := -PI/2.0; var steps: int = max(16, int(clear*20.0))
 		var pts := PackedVector2Array(); pts.append(Vector2(cx,cy))
 		for s in range(steps+1):
 			var a := start + float(s)*(clear/float(steps))
@@ -750,7 +750,7 @@ func _draw_radial_cd(ix: float, iy: float, sz: float, pct: float) -> void:
 func _draw_rounded_border(rect: Rect2, col: Color, width: float, radius: float) -> void:
 	var x := rect.position.x; var y := rect.position.y
 	var w := rect.size.x; var h := rect.size.y
-	var rr := min(radius, min(w,h)/2.0)
+	var rr: float = min(radius, min(w,h)/2.0)
 	_hud.draw_line(Vector2(x+rr,y),   Vector2(x+w-rr,y),   col, width)
 	_hud.draw_line(Vector2(x+rr,y+h), Vector2(x+w-rr,y+h), col, width)
 	_hud.draw_line(Vector2(x,y+rr),   Vector2(x,y+h-rr),   col, width)

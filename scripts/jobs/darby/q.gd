@@ -38,17 +38,17 @@ func calc_params(player) -> Dictionary:
 	var vals := s.values()
 
 	var num_src := float(vals[randi() % vals.size()])
-	var num     := max(1, int(ceil(num_src / num_divisor)))
+	var num: int = max(1, int(ceil(num_src / num_divisor)))
 
 	var dmg_src := float(vals[randi() % vals.size()])
-	var dmg     := max(1, int(floor(dmg_src / damage_divisor)))
+	var dmg: int = max(1, int(floor(dmg_src / damage_divisor)))
 
 	var spd_src := float(vals[randi() % vals.size()])
 	var spd     := maxf(speed_floor, spd_src)
 
 	var cast_vals := [s["range"], s["as"]]
 	var cast_t    := clampf(float(cast_vals[randi() % 2]), cast_time_min, cast_time_max)
-	var interval  := cast_t / max(1, num)
+	var interval: float = cast_t / max(1, num)
 
 	var cd_vals := [s["attack"], s["range"], s["speed"], s["as"]]
 	var cd      := int(clampf(float(cd_vals[randi() % 4]), cd_min, cd_max))
@@ -76,7 +76,7 @@ func activate(player, target) -> void:
 func update_queue(player, dt: float, scene) -> void:
 	if player._darby_q_queue.is_empty():
 		return
-	var q := player._darby_q_queue
+	var q: Dictionary = player._darby_q_queue
 	q["t"] = float(q["t"]) + dt
 	while int(q["left"]) > 0 and float(q["t"]) >= float(q["interval"]):
 		q["t"] = float(q["t"]) - float(q["interval"])

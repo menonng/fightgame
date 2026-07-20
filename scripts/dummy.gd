@@ -101,8 +101,8 @@ var visual_offset: Vector2 = Vector2.ZERO
 func play_airborne_visual(duration: float) -> void:
 	visual_offset = Vector2.ZERO
 	var peak := -40.0
-	var up_time := max(0.05, duration * 0.35)
-	var down_time := max(0.05, duration * 0.65)
+	var up_time: float = max(0.05, duration * 0.35)
+	var down_time: float = max(0.05, duration * 0.65)
 	var tw := create_tween()
 	tw.tween_property(self, "visual_offset:y", peak, up_time).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
 	tw.tween_property(self, "visual_offset:y", 0.0, down_time).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)

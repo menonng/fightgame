@@ -36,7 +36,7 @@ func get_current_pos() -> Vector2:
 	var elapsed := total_duration - time_left
 	var t := clampf(elapsed / max(0.001, total_duration), 0.0, 1.0)
 	# ease-out: 착지 직전 감속 (자연스러운 낙하 느낌)
-	var eased := 1.0 - pow(1.0 - t, 2.0)
+	var eased: float = 1.0 - pow(1.0 - t, 2.0)
 	return start_pos.lerp(landing_pos, eased)
 
 func on_expire(target) -> void:

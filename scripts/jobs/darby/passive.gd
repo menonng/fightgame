@@ -11,7 +11,7 @@ func update(player, dt: float, scene) -> void:
 		_roll(player, scene, false)
 
 func _roll(player, scene, initial: bool) -> void:
-	var j := player.job
+	var j: Dictionary = player.job
 
 	var atk  := float(randi_range(
 		int(j.get("roll_attack_min",  5)),   int(j.get("roll_attack_max",  100))))
