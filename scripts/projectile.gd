@@ -66,10 +66,12 @@ func _draw() -> void:
 				# 상하로 뒤집혀 보인다(비대칭 디테일이 거꾸로 됨). 캐릭터 스프라이트와
 				# 동일한 방식으로, 이 구간에서는 회전 대신 좌우 반전(scale.x=-1)을 써서
 				# 항상 바로 선 상태로 날아가게 한다.
-				var flip_x := 1.0
+				# wind_r_arrow.png 원본 에셋 자체가 좌우반전되어 그려져 있어, 기본값을
+				# -1로 보정하고 왼쪽 구간에서 오히려 +1(반전 없음)을 적용한다.
+				var flip_x := -1.0
 				var eff_vx := vx
 				if vx < 0.0:
-					flip_x = -1.0
+					flip_x = 1.0
 					eff_vx = -vx
 				var ang := -atan2(vy, eff_vx)
 				draw_set_transform(Vector2.ZERO, ang, Vector2(flip_x, 1.0))
