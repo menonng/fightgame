@@ -22,7 +22,6 @@ var player: Node2D  = null
 var dummy: Node2D   = null
 
 # ── 투사체·이펙트 ─────────────────────────────────────────────────────────────
-var basic_projs:     Array = []
 var wind_ult_arrows: Array = []
 var sword_effects:   Array = []
 var swordsman_dots:  Array = []   # [{target,time,tick,owner,damage_types}]
@@ -74,6 +73,8 @@ func _ready() -> void:
 	add_child(player)
 	var job := Global.JOBS.get(Global.selected_job, Global.JOBS["swordsman"])
 	player.setup(job, 160, WORLD_H - 80 - 60, "blue", true)
+	player.scene_ref = self
+	player.basic_attack_hit.connect(_on_player_basic_attack_hit)
 	# Darby: 게임 시작 시 스탯 초기화
 	if job.get("key") == "darby":
 		_darby_roll_stats(player, true)
@@ -206,8 +207,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if not player.dead and not player.revive_active:
-			if player.attack_lock_time <= 0.0 and player.move_lock_time <= 0.0:
-				_try_basic_attack()
+			var mouse_world := get_viewport().get_mouse_position() + Vector2(cam_x, cam_y)
+			player.perform_basic_attack(mouse_world)
 
 	# 툴팁: 마우스 이동 or 버튼
 	if event is InputEventMouseMotion or event is InputEventMouseButton:
@@ -235,50 +236,14 @@ func _update_tooltip(mouse_pos: Vector2) -> void:
 			break
 	_hud.queue_redraw()
 
-# ── 기본 공격 ─────────────────────────────────────────────────────────────────
-func _try_basic_attack() -> void:
-	if player.attack_cd_rem > 0.0: return
+# ── 기본 공격 (사거리 기반 근/원거리 시스템 — player.gd가 판정, 여기서는 피해 적용 + 직업별 후속 효과만) ──
+func _on_player_basic_attack_hit(target: Node2D, dmg: float, dmg_types: Array) -> void:
 	var jk: String = player.job.get("key", "")
-
-	if jk == "wind_archer" or jk == "darby":
-		# 원본: DirectionalProjectile (마우스 방향)
-		var ox := float(player.rect.get_center().x)
-		var oy := float(player.rect.get_center().y) - 8.0
-		var mouse_world := get_viewport().get_mouse_position() + Vector2(cam_x, cam_y)
-		var dx := mouse_world.x - ox; var dy := mouse_world.y - oy
-		if abs(dx) > 0.01: player.facing = 1 if dx > 0.0 else -1
-		var speed: float
-		var radius: int
-		var col: Color
-		if jk == "wind_archer":
-			speed = 620.0 * (1.0 + player.wind_bonus_projectile_speed)
-			radius = 10; col = Color(0.314, 0.847, 0.847)
-		else:
-			speed = 560.0; radius = 12; col = Global.random_palette_color()
-		var proj := Node2D.new()
-		proj.name = "BasicProjectile"
-		proj.set_script(ProjScript)
-		add_child(proj)
-		proj.setup_directional(ox, oy, dx, dy, speed,
-			player.attack, player, player.job.get("basic_dmg", ["physical"]),
-			radius, col, 2.0, player.attack_range, false, Projectile.Style.ORB)
-		basic_projs.append(proj)
-		player.attack_cd_rem = player.attack_cd
-
-	else:
-		# 근접 (swordsman, shoveler)
-		var tgt_ctr := dummy.center()
-		var dmg := player.try_basic_attack(tgt_ctr)
-		if dmg > 0.0:
-			# 검사자 Q 활성 중이면 q_buffed_basic_dmg 유형(기본: 고정 피해) 사용
-			var atk_types: Array
-			if jk == "swordsman" and player.q_buff_time > 0.0:
-				atk_types = player.job.get("q_buffed_basic_dmg", ["true"])
-			else:
-				atk_types = player.job.get("basic_dmg", ["physical"])
-			_deal_damage(player, dummy, dmg, atk_types)
-			if jk == "shoveler":
-				_apply_shovel_stack(player, dummy, false, true)
+	_deal_damage(player, target, dmg, dmg_types)
+	if jk == "wind_archer":
+		player.wind_on_basic_hit()
+	elif jk == "shoveler":
+		_apply_shovel_stack(player, target, false, true)
 
 # ── 스킬 ──────────────────────────────────────────────────────────────────────
 func _press_q() -> void:
@@ -431,17 +396,6 @@ func _process(dt: float) -> void:
 	# 더미 물리
 	dummy.dummy_update(dt, map_solids, map_bushes)
 
-	# 기본 투사체
-	for proj in basic_projs.duplicate():
-		proj.proj_update(dt)
-		if proj.alive:
-			if proj._world_pos.x < -120 or proj._world_pos.x > WORLD_W + 120: proj.alive = false
-			elif proj.collides_rect(dummy.rect):
-				_deal_damage(player, dummy, proj.damage, proj.dmg_types)
-				if jk == "wind_archer" and player.skill_passive != null: player.skill_passive.on_basic_hit(player)
-				proj.alive = false
-		if not proj.alive: proj.queue_free(); basic_projs.erase(proj)
-
 	# 바람궁수 R 화살
 	for proj in wind_ult_arrows.duplicate():
 		proj.proj_update(dt)
@@ -532,8 +486,6 @@ func _update_camera() -> void:
 	var off := Vector2(-cam_x, -cam_y)
 	player.position = Vector2(player.rect.position) + off
 	dummy.position  = Vector2(dummy.rect.position) + off
-	for proj in basic_projs:
-		if is_instance_valid(proj): proj.position = proj._world_pos + off
 	for proj in wind_ult_arrows:
 		if is_instance_valid(proj): proj.position = proj._world_pos + off
 	for chip in chips:

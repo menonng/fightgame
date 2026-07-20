@@ -311,12 +311,94 @@ func start_basic_swing() -> void:
 	var jk: String = job.get("key", "")
 	if jk == "swordsman" or jk == "shoveler": basic_swing_time = basic_swing_duration
 
-func try_basic_attack(tgt_center: Vector2) -> float:
-	if revive_active or attack_lock_time > 0.0 or move_lock_time > 0.0: return -1.0
-	if attack_cd_rem > 0.0: return -1.0
-	if Vector2(rect.get_center()).distance_to(tgt_center) <= attack_range:
-		attack_cd_rem = attack_cd; start_basic_swing(); return attack
-	return -1.0
+# ═══════════════════════════════════════════════════════════════════════════
+# ── 사거리 기반 근/원거리 평타 시스템 (독립) ─────────────────────────────────
+# 직업 종류가 아니라 공격 시점의 "실제 attack_range 값"으로 매번 근/원거리를
+# 새로 판정한다. 다비처럼 패시브로 사거리가 수시로 바뀌는 직업도 하드코딩된
+# 직업 분기 없이 자동으로 대응된다 (attack_range < MELEE_RANGE_THRESHOLD → 근거리).
+# ═══════════════════════════════════════════════════════════════════════════
+const MeleeHitboxScript      := preload("res://scripts/melee_hitbox.gd")
+const RangedProjectileScript := preload("res://scripts/ranged_projectile.gd")
+
+const MELEE_RANGE_THRESHOLD := 70.0   ## 이 값 미만이면 근거리, 이상이면 원거리
+const RANGED_PROJ_SPEED     := 640.0  ## 원거리 발사체 속도 (px/s)
+const RANGED_CAST_LOCK      := 0.08   ## 원거리 캐스팅~발사 순간까지의 짧은 이동 잠금 (초)
+
+signal basic_attack_hit(target: Node2D, damage: float, dmg_types: Array)
+
+var scene_ref: Node2D     = null   ## game_scene 참조 — 발사체가 카메라 오프셋(cam_x/cam_y)을 읽는 데 사용
+var is_attacking: bool    = false  ## 공격 시퀀스 진행 중이면 이동 불가
+var _melee_hitbox: Area2D = null   ## 현재 활성화된 근거리 히트박스 (없으면 null)
+
+## 좌클릭 시 game_scene이 호출하는 진입점. mouse_world: 마우스의 월드 좌표.
+func perform_basic_attack(mouse_world: Vector2) -> bool:
+	if revive_active or dead: return false
+	if attack_lock_time > 0.0 or move_lock_time > 0.0: return false
+	if attack_cd_rem > 0.0: return false
+
+	var origin := Vector2(rect.get_center())
+	var dir := mouse_world - origin
+	dir = dir.normalized() if dir.length() > 0.01 else Vector2(float(facing), 0.0)
+	facing = 1 if dir.x >= 0.0 else -1
+
+	attack_cd_rem = attack_cd
+	is_attacking  = true
+
+	if attack_range < MELEE_RANGE_THRESHOLD:
+		_start_melee_attack(dir)
+	else:
+		_start_ranged_attack(origin, dir)
+	return true
+
+## 현재 검사자 Q 버프 등 상태에 따른 기본 공격 피해 유형 (직업별 예외를 이 한 곳에서 처리)
+func _current_basic_dmg_types() -> Array:
+	if job.get("key", "") == "swordsman" and q_buff_time > 0.0:
+		return job.get("q_buffed_basic_dmg", ["true"])
+	return job.get("basic_dmg", ["physical"])
+
+func _start_melee_attack(dir: Vector2) -> void:
+	start_basic_swing()
+	# 애니메이션/히트박스 지속 시간을 공격 속도(attack_cd = 1/attack_speed)에 비례해 동기화
+	var swing_duration := clampf(attack_cd * 0.4, 0.05, 0.5)
+	move_lock_time = maxf(move_lock_time, swing_duration)
+
+	var hb := Area2D.new()
+	hb.name = "MeleeHitbox"
+	hb.set_script(MeleeHitboxScript)
+	add_child(hb)
+	# 히트박스의 '시작점'이 캐릭터 중심(로컬 rect 중심)에 오도록 배치, 회전은 마우스 방향
+	hb.position = Vector2(rect.size) / 2.0
+	hb.rotation = dir.angle()
+	hb.setup(self, attack_range)
+	hb.hit_target.connect(_on_melee_hit)
+	_melee_hitbox = hb
+
+	get_tree().create_timer(swing_duration).timeout.connect(_end_melee_attack)
+
+func _end_melee_attack() -> void:
+	if is_instance_valid(_melee_hitbox): _melee_hitbox.queue_free()
+	_melee_hitbox = null
+	is_attacking  = false
+
+func _on_melee_hit(target: Node2D) -> void:
+	basic_attack_hit.emit(target, attack, _current_basic_dmg_types())
+
+func _start_ranged_attack(origin: Vector2, dir: Vector2) -> void:
+	move_lock_time = maxf(move_lock_time, RANGED_CAST_LOCK)
+
+	var proj := Area2D.new()
+	proj.name = "RangedAttackProjectile"
+	proj.set_script(RangedProjectileScript)
+	if scene_ref != null: scene_ref.add_child(proj)
+	else: add_child(proj)
+	proj.setup(self, scene_ref, origin, dir, RANGED_PROJ_SPEED,
+		attack, attack_range, _current_basic_dmg_types())
+	proj.hit_target.connect(_on_ranged_hit)
+
+	is_attacking = false   # 요구사항: 발사체를 발사하는 순간 이동 잠금 해제
+
+func _on_ranged_hit(target: Node2D, dmg: float, types: Array) -> void:
+	basic_attack_hit.emit(target, dmg, types)
 
 # ── 부활 ──────────────────────────────────────────────────────────────────
 func respawn(sx: int, sy: int) -> void:
