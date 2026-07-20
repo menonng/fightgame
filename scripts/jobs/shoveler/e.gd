@@ -19,6 +19,10 @@ extends Resource
 @export var rise_speed:     float = 400.0  ## 솟아오르는 속도 (px/s)
 @export var solid_duration: float = 5.0    ## 발판 유지 시간 (초)
 
+@export_group("넉백 (탑다운: 묘석이 솟는 충격으로 주변으로 튕겨나감)")
+@export var knockback_duration: float = 0.4    ## 스턴 및 넉백 이동 지속 시간 (초)
+@export var knockback_dist:     float = 140.0  ## 묘석 중심 기준 바깥쪽으로 밀려나는 거리 (픽셀)
+
 func can_use(player) -> bool:
 	return player.e_cd_rem <= 0.0 \
 		and not player.revive_active \
@@ -43,3 +47,10 @@ func get_spawn_params(player, _map_solids: Array = [], _world_h: int = 0) -> Dic
 
 func activate(player) -> void:
 	player.e_cd_rem = float(player.job.get("e_cd", 24.0))
+
+## 묘석이 솟아오르는 충격에 맞은 대상을 판정 중심에서 바깥쪽으로 튕겨낸다.
+## knockback_direction: 묘석 중심 → 대상 방향(정규화 필요 없음, 내부에서 정규화).
+func apply_knockback_on_hit(target, knockback_direction: Vector2) -> void:
+	if target.status == null:
+		return
+	target.status.apply(AirborneStatus.new(knockback_duration, knockback_direction, knockback_dist))

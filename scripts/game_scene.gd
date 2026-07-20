@@ -650,6 +650,11 @@ func _press_e() -> void:
 					_deal_damage(player, dummy, float(sp["damage"]), player.job.get("e_dmg", ["physical"]))
 					if player.skill_passive != null:
 						player.skill_passive.try_add_stack(player, dummy, false, false)
+					# 묘석이 솟는 충격으로 판정 중심에서 대상을 바깥쪽으로 튕겨낸다.
+					var tomb_ctr: Vector2 = Vector2((sp["hit_rect"] as Rect2i).get_center())
+					var kb_dir: Vector2 = Vector2(dummy.rect.get_center()) - tomb_ctr
+					if kb_dir.length() < 0.01: kb_dir = Vector2(player.aim_dir)
+					player.skill_e.apply_knockback_on_hit(dummy, kb_dir)
 				var tomb := Node2D.new()
 				tomb.name = "Tombstone"
 				tomb.set_script(TombScript)

@@ -62,8 +62,17 @@ func _draw() -> void:
 			if _tex:
 				var th := 150.0
 				var tw := _tex.get_width() * th / float(_tex.get_height())
-				var ang := -atan2(vy, vx)
-				draw_set_transform(Vector2.ZERO, ang, Vector2.ONE)
+				# 화살이 왼쪽 절반으로 날아갈 때는 회전만으로 방향을 맞추면 텍스처가
+				# 상하로 뒤집혀 보인다(비대칭 디테일이 거꾸로 됨). 캐릭터 스프라이트와
+				# 동일한 방식으로, 이 구간에서는 회전 대신 좌우 반전(scale.x=-1)을 써서
+				# 항상 바로 선 상태로 날아가게 한다.
+				var flip_x := 1.0
+				var eff_vx := vx
+				if vx < 0.0:
+					flip_x = -1.0
+					eff_vx = -vx
+				var ang := -atan2(vy, eff_vx)
+				draw_set_transform(Vector2.ZERO, ang, Vector2(flip_x, 1.0))
 				draw_texture_rect(_tex, Rect2(-tw/2.0, -th/2.0, tw, th), false)
 				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 			else:
