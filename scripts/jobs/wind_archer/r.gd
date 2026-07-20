@@ -10,9 +10,11 @@ extends Resource
 @export var proj_life:   float = 2.2    ## 최대 지속 시간 (초)
 @export var proj_color:  Color = Color(0.471, 1.0, 0.824)
 
-@export_group("에어본 (탑다운: 넉백 + 스턴 + 착지 가이드)")
-@export var airborne_duration: float = 0.6    ## 스턴 및 넉백 이동 지속 시간 (초)
-@export var knockback_dist:    float = 220.0  ## 화살 진행 방향으로 떠밀리는 총 거리 (픽셀)
+@export_group("에어본 (탑다운: 위로 띄우는 넉업 + 스턴)")
+@export var airborne_duration: float = 0.6  ## 스턴 및 공중에 뜬 상태 지속 시간 (초)
+## 위로 띄우기만 하고 지면상의 위치는 옮기지 않는다 — 지속시간이 끝나면 원래 있던
+## 자리로 그대로 돌아온다(0이면 landing_pos == start_pos가 되어 이동이 발생하지 않음).
+@export var knockback_dist:    float = 0.0
 
 @export_group("발사 위치 오프셋")
 @export var spawn_offset_x: float = 40.0   ## 발사 위치 x 오프셋
@@ -50,8 +52,9 @@ func get_spawn_params(player) -> Dictionary:
 func activate(player) -> void:
 	player.r_cd_rem = float(player.job.get("r_cd", 100.0))
 
-## 피격 대상에게 에어본(넉백+스턴) 부여 — game_scene의 충돌 처리에서 호출.
-## knockback_direction: 화살의 진행 방향(정규화 필요 없음, 내부에서 정규화).
+## 피격 대상에게 에어본(넉업+스턴) 부여 — game_scene의 충돌 처리에서 호출.
+## knockback_direction: 위로 뜨는 시각 연출 방향(정규화 필요 없음, 내부에서 정규화) —
+## knockback_dist가 0이라 실제 이동에는 영향이 없고, 지속시간이 끝나면 원위치로 돌아온다.
 func apply_airborne_on_hit(target, knockback_direction: Vector2) -> void:
 	if target.status == null:
 		return
