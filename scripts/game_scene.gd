@@ -18,7 +18,16 @@ var map_solids: Array = []   ## 완전 차단 지형 (경계 벽)
 var map_bushes: Array = []   ## 부쉬 — 통과 가능, 이동속도 감소 + 은신 성격
 
 # ── 맵 픽셀 아트 텍스처 — 직업 스프라이트와 같은 픽셀 디자인 톤으로 절차 생성 ─────
-var _tex_floor: ImageTexture = null
+## 바닥은 타일 하나를 그대로 반복(tile=true)하면 눈에 확 띄게 지저분해 보이므로,
+## 색조가 살짝 다른 변형 여러 개를 만들고 부드러운 노이즈로 어느 칸에 어떤 변형이
+## 들어갈지 미리 정해둔 뒤 칸 단위로 그린다.
+const FLOOR_CELL: int         = 64   ## 반복 블록 한 칸의 크기 (px) — 정확히 64x64 유지
+const FLOOR_VARIANT_COUNT: int = 4   ## 바닥 변형 타일 개수
+const FLOOR_NOISE_SCALE: float = 3.0 ## 노이즈 격자점 간격(칸 단위) — 클수록 더 큰 뭉치로 섞임
+var _tex_floor_variants: Array = []  ## ImageTexture[FLOOR_VARIANT_COUNT]
+var _floor_variant_grid: Array = []  ## 칸별 변형 인덱스(flat, cols*rows)
+var _floor_cols: int = 0
+var _floor_rows: int = 0
 var _tex_wall: ImageTexture  = null
 var _tex_bush: ImageTexture  = null
 
@@ -165,10 +174,48 @@ func _build_map() -> void:
 ## 코어키퍼/메이플스토리 톤을 참고해 개별 픽셀 노이즈가 아니라 "얼룩(패치) 단위로
 ## 손으로 칠한 듯한" 뭉치 + 낱개 디테일(잔디잎/하이라이트/베벨)로 구성한다.
 func _build_pixel_map_textures() -> void:
-	_tex_floor = _make_pixel_grass_tile(1001)
+	# 색조가 살짝씩 다른 4가지 바닥 변형 — 표준 녹색 / 마른 황토 잔디 / 그늘진 이끼 / 촉촉한 청록.
+	_tex_floor_variants = [
+		_make_pixel_grass_tile(1001),
+		_make_pixel_grass_tile(1138, Color(0.58, 0.52, 0.24), 0.16),
+		_make_pixel_grass_tile(1275, Color(0.07, 0.10, 0.07), 0.22),
+		_make_pixel_grass_tile(1412, Color(0.16, 0.32, 0.30), 0.16),
+	]
 	_tex_wall  = _make_pixel_stone_wall_tile(
 		Color(0.196,0.298,0.196), Color(0.106,0.161,0.110), Color(0.243,0.360,0.235), 2002)
 	_tex_bush  = _make_pixel_leaf_bush_tile(3003)
+	_build_floor_variant_grid()
+
+## 바닥 칸(FLOOR_CELL 단위)마다 어떤 변형 타일을 쓸지 부드러운 값 노이즈(격자점을
+## 성기게 뽑아 이중선형 보간)로 미리 계산해둔다 — 칸별 완전 무작위 선택은 "소금·후추"
+## 잡음처럼 지저분해 보이므로, 인접한 칸끼리 비슷한 값이 나와 큰 뭉치로 섞이게 한다.
+func _build_floor_variant_grid() -> void:
+	_floor_cols = int(ceil(float(WORLD_W) / float(FLOOR_CELL)))
+	_floor_rows = int(ceil(float(WORLD_H) / float(FLOOR_CELL)))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4004
+	var lat_cols: int = int(ceil(float(_floor_cols) / FLOOR_NOISE_SCALE)) + 2
+	var lat_rows: int = int(ceil(float(_floor_rows) / FLOOR_NOISE_SCALE)) + 2
+	var lattice: Array = []
+	lattice.resize(lat_cols * lat_rows)
+	for i in range(lattice.size()): lattice[i] = rng.randf()
+	_floor_variant_grid.clear()
+	_floor_variant_grid.resize(_floor_cols * _floor_rows)
+	for row in range(_floor_rows):
+		for col in range(_floor_cols):
+			var lx: float = float(col) / FLOOR_NOISE_SCALE
+			var ly: float = float(row) / FLOOR_NOISE_SCALE
+			var x0: int = int(floor(lx)); var y0: int = int(floor(ly))
+			var tx: float = lx - float(x0); var ty: float = ly - float(y0)
+			var v00: float = lattice[y0 * lat_cols + x0]
+			var v10: float = lattice[y0 * lat_cols + x0 + 1]
+			var v01: float = lattice[(y0 + 1) * lat_cols + x0]
+			var v11: float = lattice[(y0 + 1) * lat_cols + x0 + 1]
+			var vx0: float = lerpf(v00, v10, tx)
+			var vx1: float = lerpf(v01, v11, tx)
+			var v: float = lerpf(vx0, vx1, ty)
+			var idx: int = clampi(int(v * FLOOR_VARIANT_COUNT), 0, FLOOR_VARIANT_COUNT - 1)
+			_floor_variant_grid[row * _floor_cols + col] = idx
 
 ## 반지름을 셀 단위로 살짝 흔들어 완전한 원이 아닌 유기적인 얼룩(패치) 모양을 찍는다.
 ## cx/cy 기준 좌표를 grid로 감싸(wraparound) 타일 경계에 걸쳐도 이음매 없이 반복된다.
@@ -212,9 +259,11 @@ func _blit_logical_grid(cells: Array, grid: int, px: int) -> ImageTexture:
 
 ## 잔디 바닥 — 방사형 그라데이션 패치 뭉치(볼록한 입체감) 위에 밝은/어두운 두 톤의 잔디잎,
 ## 클로버·들꽃 포인트 컬러, 드문 흙 알갱이를 얹어 코어키퍼 식의 "손으로 칠한" 질감을 낸다.
-func _make_pixel_grass_tile(seed_val: int) -> ImageTexture:
-	var grid := 24
-	var px := 3
+## grid*px = 64로 고정(FLOOR_CELL과 일치). tint/tint_strength로 변형별 색조를 살짝 바꿔
+## 같은 패턴이 그대로 반복되는 느낌을 줄인다.
+func _make_pixel_grass_tile(seed_val: int, tint: Color = Color.BLACK, tint_strength: float = 0.0) -> ImageTexture:
+	var grid := 32
+	var px := 2
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_val
 	var base: Color      = Color(0.129, 0.161, 0.106)
@@ -233,6 +282,14 @@ func _make_pixel_grass_tile(seed_val: int) -> ImageTexture:
 	var flower_colors: Array = [
 		Color(0.933, 0.867, 0.361), Color(0.855, 0.400, 0.545),
 		Color(0.702, 0.549, 0.867), Color(0.980, 0.980, 0.969)]
+	if tint_strength > 0.0:
+		base      = base.lerp(tint, tint_strength)
+		mid       = mid.lerp(tint, tint_strength)
+		mid_edge  = mid_edge.lerp(tint, tint_strength)
+		deep      = deep.lerp(tint, tint_strength)
+		deep_edge = deep_edge.lerp(tint, tint_strength)
+		blade     = blade.lerp(tint, tint_strength * 0.7)
+		blade_hi  = blade_hi.lerp(tint, tint_strength * 0.7)
 	var cells: Array = []
 	cells.resize(grid * grid)
 	for i in range(cells.size()): cells[i] = base
@@ -282,14 +339,15 @@ func _make_pixel_grass_tile(seed_val: int) -> ImageTexture:
 ## 경계벽 — 어긋난 줄의 사각 블록마다 연속적인(이진 선택이 아닌) 톤 편차 + 2단계 베벨
 ## 그라데이션(모서리 강한 하이라이트/그림자 → 중간 톤으로 부드럽게 전이)을 넣어 돌출된
 ## 석재 블록의 입체감을 내고, 드문 광물 알갱이·패임(pit)으로 마감해 밴딩을 없앤다.
+## cols*brick_w*px = rows*brick_h*px = 64로 고정(FLOOR_CELL과 동일 블록 크기).
 func _make_pixel_stone_wall_tile(base: Color, mortar: Color, highlight: Color, seed_val: int) -> ImageTexture:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_val
 	var brick_w := 8
-	var brick_h := 6
-	var px := 4
+	var brick_h := 8
+	var px := 2
 	var rows := 4
-	var cols := 6
+	var cols := 4
 	var shadow: Color   = base.darkened(0.45)
 	var shadow2: Color  = base.darkened(0.22)
 	var hi2: Color        = highlight.lerp(base, 0.35)
@@ -365,8 +423,8 @@ func _make_pixel_stone_wall_tile(base: Color, mortar: Color, highlight: Color, s
 ## 수풀 — 방사형 그라데이션 잎 뭉치를 여러 겹 쌓아 볼록한 입체감을 내고, 뭉치 사이 그림자
 ## 틈, 햇빛 반짝임(dapple), 열매·꽃 포인트 컬러로 마무리해 색상 다양성을 더한다.
 func _make_pixel_leaf_bush_tile(seed_val: int) -> ImageTexture:
-	var grid := 24
-	var px := 3
+	var grid := 32
+	var px := 2
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_val
 	var clump_a: Color    = Color(0.220, 0.450, 0.200, 0.88)
@@ -770,9 +828,9 @@ func _process(dt: float) -> void:
 			if proj.alive and not (did in proj.hit_ids) and proj.collides_rect(dummy.rect):
 				_deal_damage(player, dummy, proj.damage, proj.dmg_types)
 				Global.request_screen_shake(WIND_R_SHAKE_STRENGTH, WIND_R_SHAKE_DURATION)
-				# 에어본(넉백+스턴) 적용 — 화살 진행 방향(vx,vy)으로 떠밀림
+				# 에어본(넉백+스턴) 적용 — 화살이 날아간 방향과 무관하게 항상 위(화면 위쪽)로 띄운다.
 				if proj.owner_node != null and proj.owner_node.skill_r != null:
-					var kb_dir := Vector2(proj.vx, proj.vy)
+					var kb_dir := Vector2(0.0, -1.0)
 					proj.owner_node.skill_r.apply_airborne_on_hit(dummy, kb_dir)
 				proj.hit_ids.append(did)
 				if not proj.pierce: proj.alive = false
@@ -881,8 +939,13 @@ func _update_camera() -> void:
 
 # ── 맵 렌더 ──────────────────────────────────────────────────────────────────
 func _draw_map() -> void:
-	# 바닥 (전체 평면 배경) — 절차 생성한 픽셀 노이즈 타일을 반복
-	_map_draw.draw_texture_rect(_tex_floor, _ws(Rect2i(0, 0, WORLD_W, WORLD_H)), true)
+	# 바닥 (전체 평면 배경) — 타일 하나를 그대로 반복하면 지저분해 보이므로, 64x64 칸마다
+	# 미리 계산해둔 노이즈 기반 변형 인덱스(_floor_variant_grid)로 서로 다른 바닥 타일을 그린다.
+	for row in range(_floor_rows):
+		for col in range(_floor_cols):
+			var variant: int = _floor_variant_grid[row * _floor_cols + col]
+			var cell_rect := Rect2i(col * FLOOR_CELL, row * FLOOR_CELL, FLOOR_CELL, FLOOR_CELL)
+			_map_draw.draw_texture_rect(_tex_floor_variants[variant], _ws(cell_rect), false)
 	# 경계 벽 — 픽셀 벽돌 타일 + 테두리 외곽선(스프라이트의 두꺼운 아웃라인 톤과 통일)
 	for r in map_solids:
 		_map_draw.draw_texture_rect(_tex_wall, _ws(r), true)
