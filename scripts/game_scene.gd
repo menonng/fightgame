@@ -85,13 +85,15 @@ func _ready() -> void:
 
 	_map_draw = Node2D.new()
 	_map_draw.name = "MapDraw"
+	_map_draw.z_index = -2
 	add_child(_map_draw)
 	_map_draw.draw.connect(_draw_map)
 
-	# 맵 바로 다음, 캐릭터들보다 먼저 추가 — 씬 트리 순서가 곧 렌더 순서이므로
-	# 파묻힘 흙무덤이 항상 지면 위·모든 캐릭터/요소 아래에 그려지도록 보장한다.
+	# 씬 트리 순서만으로는 다른 노드가 z_index를 건드릴 경우 순서 보장이 깨질 수 있어
+	# z_index를 명시적으로 지정한다: 맵(-2) < 흙무덤(-1) < 캐릭터/이펙트(기본값 0).
 	_burial_draw = Node2D.new()
 	_burial_draw.name = "BurialDraw"
+	_burial_draw.z_index = -1
 	add_child(_burial_draw)
 	_burial_draw.draw.connect(_draw_burial_mounds)
 

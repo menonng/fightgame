@@ -327,7 +327,8 @@ func wind_on_basic_hit() -> void:
 # ── 기본 공격 ──────────────────────────────────────────────────────────────
 func start_basic_swing() -> void:
 	var jk: String = job.get("key", "")
-	if jk == "swordsman" or jk == "shoveler": basic_swing_time = basic_swing_duration
+	# 다비/쇼블러도 사거리 기준 근접 모드일 때 무기(고양이/삽) 스윙 모션을 재생한다.
+	if jk == "swordsman" or jk == "shoveler" or jk == "darby": basic_swing_time = basic_swing_duration
 
 # ═══════════════════════════════════════════════════════════════════════════
 # ── 사거리 기반 근/원거리 평타 시스템 (독립) ─────────────────────────────────
@@ -513,7 +514,7 @@ func player_update(dt: float) -> void:
 			status.clear_kind(StatusEffect.Kind.STAT_BONUS)
 			status.clear_kind(StatusEffect.Kind.STAT_DEBUFF)
 		refresh_stats()
-		if skill_passive != null and skill_passive.can_trigger(self):
+		if skill_passive != null and skill_passive.has_method("can_trigger") and skill_passive.can_trigger(self):
 			skill_passive.trigger(self)
 		else:
 			dead = true; respawn_time = 5.0; hp = 0.0
@@ -669,18 +670,29 @@ func _draw() -> void:
 		elif walk_swing_enabled and _walk_anim_time > 0.0:
 			_draw_body_with_walk_pendulum(use_tex, tw, th, visual_spr_rect, body_modulate)
 		else:
-			var src_x := 0.0 if facing >= 0 else tw
-			var src_w := tw if facing >= 0 else -tw
+			# 반전은 항상 draw_set_transform의 음수 x 스케일로 처리한다 (r_active 스핀·
+			# 걷기 진자와 동일한 검증된 방식). 음수 폭 소스 Rect2로 반전을 시도하면
+			# 부분 UV 영역(파묻힘 클리핑 등)에서 아무것도 그려지지 않아 서쪽을 볼 때
+			# 캐릭터가 통째로 사라지던 버그가 있었다.
 			if buried_now:
 				# 파묻힘: 지면 위로 드러난 부분(머리)만 그려 몸통이 무덤 밖으로 새어나오지 않게 한다.
 				# 무덤 자체는 game_scene의 공용 지면 레이어가 맵 바로 위에 별도로 그린다.
 				var visible_h := clampf(float(rect.size.y) - visual_spr_rect.position.y, 4.0, visual_spr_rect.size.y)
 				var src_h := th * (visible_h / spr_rect.size.y)
+				var head_ctr := Vector2(visual_spr_rect.get_center().x, visual_spr_rect.position.y + visible_h / 2.0)
+				draw_set_transform(head_ctr, 0.0, Vector2(float(facing), 1.0))
 				draw_texture_rect_region(use_tex,
-					Rect2(visual_spr_rect.position, Vector2(visual_spr_rect.size.x, visible_h)),
-					Rect2(src_x, 0.0, src_w, src_h), body_modulate)
+					Rect2(-visual_spr_rect.size.x / 2.0, -visible_h / 2.0, visual_spr_rect.size.x, visible_h),
+					Rect2(0.0, 0.0, tw, src_h), body_modulate)
+				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 			else:
-				draw_texture_rect_region(use_tex, visual_spr_rect, Rect2(src_x, 0.0, src_w, th), body_modulate)
+				var ctr := Vector2(visual_spr_rect.get_center())
+				draw_set_transform(ctr, 0.0, Vector2(float(facing), 1.0))
+				draw_texture_rect_region(use_tex,
+					Rect2(-visual_spr_rect.size.x / 2.0, -visual_spr_rect.size.y / 2.0,
+						visual_spr_rect.size.x, visual_spr_rect.size.y),
+					Rect2(0.0, 0.0, tw, th), body_modulate)
+				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	else:
 		var fallback_col := Color(0.9, 0.9, 1.0) if team == "blue" else Color(1.0, 0.7, 0.7)
 		fallback_col.a = body_modulate.a
@@ -712,6 +724,26 @@ func _draw() -> void:
 		var bx := ctr.x + 4.0 if facing >= 0 else ctr.x - bw - 4.0
 		draw_set_transform(Vector2(bx + bw / 2.0, ctr.y - 8.0 + bh / 2.0), 0.0, Vector2(float(facing), 1.0))
 		_draw_bow_shape(bw, bh)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+	# Darby 고양이 (근접 냥냥펀치 모드 — 현재 사거리가 근접 기준일 때만 착용 표시)
+	if jk == "darby" and attack_range < MELEE_RANGE_THRESHOLD:
+		var ctr := Vector2(visual_spr_rect.get_center()); var top := visual_spr_rect.position.y
+		var cx := 12.0; var cy := 40.0
+		var pivot := Vector2(ctr.x + float(facing) * 20.0, top + 24.0)
+		var angle := (18.0 + basic_swing_angle) if facing >= 0 else (-18.0 - basic_swing_angle)
+		draw_set_transform(pivot, deg_to_rad(angle), Vector2(float(facing), 1.0))
+		_draw_cat_shape(cx, cy)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+	# Shoveler 삽
+	if jk == "shoveler":
+		var ctr := Vector2(visual_spr_rect.get_center()); var top := visual_spr_rect.position.y
+		var cx := 10.0; var cy := 43.0
+		var pivot := Vector2(ctr.x + float(facing) * 22.0, top + 20.0)
+		var angle := (18.0 + basic_swing_angle) if facing >= 0 else (-18.0 - basic_swing_angle)
+		draw_set_transform(pivot, deg_to_rad(angle), Vector2(float(facing), 1.0))
+		_draw_shovel_shape(cx, cy)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 	# HP 바 (스프라이트를 따라 함께 떠오름)
@@ -802,3 +834,41 @@ func _draw_bow_shape(bw: float, bh: float) -> void:
 	draw_line(Vector2(ox+4.0, oy+14.0),Vector2(mcx,mcy), sc, 1.0)
 	draw_line(Vector2(ox+20.0,oy+4.0), Vector2(mcx,mcy), sc, 1.0)
 	draw_line(Vector2(ox+20.0,oy+14.0),Vector2(mcx,mcy), sc, 1.0)
+
+## 다비 근접 무기 — 냥냥펀치용 고양이. 목덜미를 잡고 몽둥이처럼 휘두르는 모양새(꼬리쪽이 손잡이).
+func _draw_cat_shape(cx: float, cy: float) -> void:
+	var ox := -cx; var oy := -cy
+	var fur := Color(0.906, 0.706, 0.373); var fur_dark := Color(0.706, 0.510, 0.235)
+	var ink := Color(0.106, 0.106, 0.122)
+	# 꼬리 (손잡이 역할)
+	draw_line(Vector2(ox+cx+7.0, oy+56.0), Vector2(ox+cx+15.0, oy+74.0), fur_dark, 4.0)
+	# 몸통
+	draw_set_transform(Vector2(ox+cx, oy+48.0), 0.0, Vector2(1.0, 1.35))
+	draw_circle(Vector2.ZERO, 11.0, fur)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# 머리
+	draw_circle(Vector2(ox+cx, oy+18.0), 11.0, fur)
+	var ear_l := PackedVector2Array([Vector2(ox+cx-9.0,oy+11.0),Vector2(ox+cx-3.0,oy+11.0),Vector2(ox+cx-7.0,oy+1.0)])
+	var ear_r := PackedVector2Array([Vector2(ox+cx+3.0,oy+11.0),Vector2(ox+cx+9.0,oy+11.0),Vector2(ox+cx+7.0,oy+1.0)])
+	draw_colored_polygon(ear_l, fur_dark)
+	draw_colored_polygon(ear_r, fur_dark)
+	draw_circle(Vector2(ox+cx-4.0, oy+18.0), 1.6, ink)
+	draw_circle(Vector2(ox+cx+4.0, oy+18.0), 1.6, ink)
+	# 앞발 (앞으로 뻗은 펀치 포즈)
+	draw_circle(Vector2(ox+cx-9.0, oy+34.0), 4.0, fur)
+	draw_circle(Vector2(ox+cx+9.0, oy+34.0), 4.0, fur)
+
+## 쇼블러 근접 무기 — 삽
+func _draw_shovel_shape(cx: float, cy: float) -> void:
+	var ox := -cx; var oy := -cy
+	var wood := Color(0.471, 0.353, 0.157); var steel := Color(0.706, 0.706, 0.745); var steel_dark := Color(0.471, 0.471, 0.510)
+	# 자루
+	draw_rect(Rect2(ox+cx-3.0, oy+8.0, 6.0, 50.0), wood)
+	# D자형 손잡이
+	draw_arc(Vector2(ox+cx, oy+8.0), 7.0, PI, TAU, 12, wood, 3.0)
+	# 삽날
+	var blade := PackedVector2Array([
+		Vector2(ox+cx-10.0, oy+56.0), Vector2(ox+cx+10.0, oy+56.0),
+		Vector2(ox+cx+8.0, oy+76.0), Vector2(ox+cx-8.0, oy+76.0)])
+	draw_colored_polygon(blade, steel)
+	draw_rect(Rect2(ox+cx-11.0, oy+54.0, 22.0, 5.0), steel_dark)

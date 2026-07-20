@@ -23,6 +23,13 @@ func _init(duration: float, p_knockback_dir: Vector2, p_knockback_dist: float, o
 func on_apply(target) -> void:
 	start_pos = Vector2(target.rect.position)
 	landing_pos = start_pos + knockback_dir * knockback_dist
+	# 넉백 착지 지점이 맵 경계(및 경계벽) 밖으로 나가지 않도록 클램프.
+	# _apply_airborne_position()은 move_and_collide_map과 달리 solids 충돌 검사를
+	# 거치지 않고 rect.position을 직접 대입하므로, 여기서 미리 막아두지 않으면
+	# 맵 가장자리 근처에서 넉백당한 대상이 그대로 맵 밖으로 튕겨나갈 수 있다.
+	var size := Vector2(target.rect.size)
+	landing_pos.x = clampf(landing_pos.x, float(Global.WORLD_WALL), float(Global.WORLD_W - Global.WORLD_WALL) - size.x)
+	landing_pos.y = clampf(landing_pos.y, float(Global.WORLD_WALL), float(Global.WORLD_H - Global.WORLD_WALL) - size.y)
 	# 스턴: 기존 잠금 필드를 그대로 활용 (이동/공격/스킬 전부 불가)
 	target.move_lock_time   = maxf(target.get("move_lock_time"),   time_left)
 	target.attack_lock_time = maxf(target.get("attack_lock_time"), time_left)

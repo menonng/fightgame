@@ -17,7 +17,7 @@ func setup(p_rect: Rect2i, p_start_y: float, p_target_y: float) -> void:
 	solid = false; duration = 5.0; alive = true
 	var img := Image.load_from_file("res://assets/shoveler_gravestone.png")
 	if img:
-		img.set_colorkey(Color.WHITE)
+		_apply_white_colorkey(img)
 		_tex = ImageTexture.create_from_image(img)
 	position = Vector2(world_rect.position.x, world_y)
 
@@ -34,6 +34,17 @@ func tomb_update(dt: float) -> bool:
 	position = Vector2(world_rect.position)
 	queue_redraw()
 	return just_solidified
+
+## pygame Surface.set_colorkey()의 흰색 배경 제거를 Godot Image API로 재구현한 것.
+## Image에는 그런 메서드가 없어(원본 Python 이식 잔재) 호출 시 즉시 런타임 에러로
+## 죽는 버그가 있었다 — 흰색 픽셀을 직접 순회하며 알파를 0으로 만든다.
+func _apply_white_colorkey(img: Image) -> void:
+	img.convert(Image.FORMAT_RGBA8)
+	for y in range(img.get_height()):
+		for x in range(img.get_width()):
+			var px := img.get_pixel(x, y)
+			if px.r > 0.98 and px.g > 0.98 and px.b > 0.98:
+				img.set_pixel(x, y, Color(px.r, px.g, px.b, 0.0))
 
 func _draw() -> void:
 	if not alive: return

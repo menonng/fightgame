@@ -4,6 +4,13 @@ extends Node
 
 var selected_job: String = "swordsman"
 
+## game_scene.gd의 WORLD_W/WORLD_H/경계벽 두께와 반드시 동일하게 유지 — 넉백/에어본처럼
+## game_scene을 직접 참조할 수 없는 상태이상(status_effects/*)이 착지 지점을 맵 밖으로
+## 벗어나지 않게 클램프할 때 사용한다.
+const WORLD_W := 2100
+const WORLD_H := 1400
+const WORLD_WALL := 40
+
 ## 히트박스/판정 텔레그래프 등 디버그성 시각 요소를 보여줄지 여부.
 ## 연습 모드(현재 game_scene)는 true, 추후 추가될 멀티플레이 씬은 false로 설정해
 ## 상대에게 정확한 판정 범위가 노출되지 않도록 한다.
