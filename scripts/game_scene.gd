@@ -162,44 +162,81 @@ func _build_map() -> void:
 ## 직업 스프라이트(assets/*.png)와 톤을 맞춘 절차적 픽셀 아트 타일 3종을 만들어
 ## draw_texture_rect(tile=true)로 맵 전체에 반복시킨다. 새 그래픽 파일을 추가하는
 ## 대신 코드로 생성해 이 프로젝트의 "전부 코드로 그린다" 관례를 그대로 따른다.
+## 코어키퍼/메이플스토리 톤을 참고해 개별 픽셀 노이즈가 아니라 "얼룩(패치) 단위로
+## 손으로 칠한 듯한" 뭉치 + 낱개 디테일(잔디잎/하이라이트/베벨)로 구성한다.
 func _build_pixel_map_textures() -> void:
-	_tex_floor = _make_pixel_noise_tile(
-		[Color(0.129,0.161,0.106), Color(0.161,0.196,0.129), Color(0.098,0.122,0.082), Color(0.184,0.235,0.145)],
-		[62, 20, 14, 4], 16, 4, 1001)
-	_tex_wall = _make_pixel_brick_tile(
-		Color(0.196,0.298,0.196), Color(0.106,0.161,0.110), Color(0.243,0.360,0.235), 8, 5, 4, 2002)
-	_tex_bush = _make_pixel_noise_tile(
-		[Color(0.220,0.450,0.200,0.88), Color(0.278,0.529,0.243,0.88), Color(0.145,0.302,0.133,0.92), Color(0.322,0.580,0.290,0.85)],
-		[46, 22, 24, 8], 16, 4, 3003)
+	_tex_floor = _make_pixel_grass_tile(1001)
+	_tex_wall  = _make_pixel_stone_wall_tile(
+		Color(0.196,0.298,0.196), Color(0.106,0.161,0.110), Color(0.243,0.360,0.235), 2002)
+	_tex_bush  = _make_pixel_leaf_bush_tile(3003)
 
-## 여러 색조 중 가중치대로 무작위 선택해 채운 grid×grid 크기(1칸 = px×px 실픽셀)의
-## 노이즈 타일 — 잔디/수풀처럼 우둘투둘한 픽셀 텍스처에 사용.
-func _make_pixel_noise_tile(shades: Array, weights: Array, grid: int, px: int, seed_val: int) -> ImageTexture:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed_val
-	var total := 0
-	for w in weights: total += int(w)
+## 반지름을 셀 단위로 살짝 흔들어 완전한 원이 아닌 유기적인 얼룩(패치) 모양을 찍는다.
+## cx/cy 기준 좌표를 grid로 감싸(wraparound) 타일 경계에 걸쳐도 이음매 없이 반복된다.
+func _stamp_blob_wrapped(cells: Array, grid: int, cx: int, cy: int, radius: int,
+		color: Color, rng: RandomNumberGenerator) -> void:
+	for dy in range(-radius - 1, radius + 2):
+		for dx in range(-radius - 1, radius + 2):
+			var d: float   = sqrt(float(dx * dx + dy * dy))
+			var wob: float = float(radius) + rng.randf_range(-0.9, 0.9)
+			if d <= wob:
+				var gx: int = ((cx + dx) % grid + grid) % grid
+				var gy: int = ((cy + dy) % grid + grid) % grid
+				cells[gy * grid + gx] = color
+
+## grid×grid 논리 픽셀 배열을 px배 확대해 실제 이미지로 굽는다.
+func _blit_logical_grid(cells: Array, grid: int, px: int) -> ImageTexture:
 	var img := Image.create_empty(grid * px, grid * px, false, Image.FORMAT_RGBA8)
 	for gy in range(grid):
 		for gx in range(grid):
-			var roll := rng.randi_range(0, total - 1)
-			var acc := 0
-			var chosen: Color = shades[0]
-			for i in range(shades.size()):
-				acc += int(weights[i])
-				if roll < acc: chosen = shades[i]; break
+			var c: Color = cells[gy * grid + gx]
 			for py in range(px):
 				for pxi in range(px):
-					img.set_pixel(gx * px + pxi, gy * px + py, chosen)
+					img.set_pixel(gx * px + pxi, gy * px + py, c)
 	return ImageTexture.create_from_image(img)
 
-## 벽돌처럼 줄마다 어긋나게 배치된 사각 블록 + 모르타르 틈 패턴의 타일 — 경계벽에 사용.
-func _make_pixel_brick_tile(base: Color, mortar: Color, highlight: Color,
-		brick_w: int, brick_h: int, px: int, seed_val: int) -> ImageTexture:
+## 잔디 바닥 — 넓은 밝기 차 패치 뭉치 위에 낱개 잔디잎 스프라이트(위로 뾰족한 2픽셀)와
+## 드문 흙 알갱이를 얹어 "손으로 칠한" 질감 + 또렷한 디테일을 동시에 낸다.
+func _make_pixel_grass_tile(seed_val: int) -> ImageTexture:
+	var grid := 24
+	var px := 3
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_val
+	var base: Color  = Color(0.129, 0.161, 0.106)
+	var mid: Color   = Color(0.161, 0.196, 0.129)
+	var deep: Color  = Color(0.098, 0.122, 0.082)
+	var blade: Color = Color(0.243, 0.314, 0.180)
+	var fleck: Color = Color(0.145, 0.114, 0.078)
+	var cells: Array = []
+	cells.resize(grid * grid)
+	for i in range(cells.size()): cells[i] = base
+	for i in range(7):
+		_stamp_blob_wrapped(cells, grid, rng.randi_range(0, grid - 1), rng.randi_range(0, grid - 1),
+			rng.randi_range(2, 4), mid, rng)
+	for i in range(4):
+		_stamp_blob_wrapped(cells, grid, rng.randi_range(0, grid - 1), rng.randi_range(0, grid - 1),
+			rng.randi_range(1, 3), deep, rng)
+	for i in range(14):
+		var gx: int = rng.randi_range(0, grid - 1)
+		var gy: int = rng.randi_range(0, grid - 1)
+		cells[gy * grid + gx] = blade
+		var gy2: int = ((gy - 1) % grid + grid) % grid
+		cells[gy2 * grid + gx] = blade
+	for i in range(6):
+		cells[rng.randi_range(0, grid - 1) * grid + rng.randi_range(0, grid - 1)] = fleck
+	return _blit_logical_grid(cells, grid, px)
+
+## 경계벽 — 어긋난 줄의 사각 블록마다 위/왼쪽은 밝게, 아래/오른쪽은 어둡게 베벨을 넣어
+## 평면이 아니라 돌출된 석재 블록처럼 보이게 하고, 드문 패임(pit)으로 마감한다.
+func _make_pixel_stone_wall_tile(base: Color, mortar: Color, highlight: Color, seed_val: int) -> ImageTexture:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_val
+	var brick_w := 8
+	var brick_h := 6
+	var px := 4
 	var rows := 4
 	var cols := 6
+	var shadow: Color = base.darkened(0.45)
+	var pit: Color     = base.darkened(0.25)
 	var img := Image.create_empty(cols * brick_w * px, rows * brick_h * px, false, Image.FORMAT_RGBA8)
 	img.fill(mortar)
 	for row in range(rows):
@@ -207,15 +244,50 @@ func _make_pixel_brick_tile(base: Color, mortar: Color, highlight: Color,
 		for col in range(-1, cols + 1):
 			var bx := col * brick_w + offset
 			var by := row * brick_h
-			var tint: Color = base if rng.randi_range(0, 3) > 0 else highlight
+			var tint: Color = base if rng.randi_range(0, 3) > 0 else highlight.lerp(base, 0.3)
 			for py in range(1, brick_h - 1):
 				for pxi in range(1, brick_w - 1):
 					var ix := bx + pxi; var iy := by + py
-					if ix >= 0 and ix < cols * brick_w and iy >= 0 and iy < rows * brick_h:
-						for sy in range(px):
-							for sx in range(px):
-								img.set_pixel(ix * px + sx, iy * px + sy, tint)
+					if ix < 0 or ix >= cols * brick_w or iy < 0 or iy >= rows * brick_h: continue
+					var c: Color = tint
+					if py == 1 or pxi == 1:
+						c = highlight
+					elif py == brick_h - 2 or pxi == brick_w - 2:
+						c = shadow
+					elif rng.randi_range(0, 11) == 0:
+						c = pit
+					for sy in range(px):
+						for sx in range(px):
+							img.set_pixel(ix * px + sx, iy * px + sy, c)
 	return ImageTexture.create_from_image(img)
+
+## 수풀 — 큰 잎 뭉치 위에 더 작고 밝은 뭉치를 겹쳐 입체감을 내고, 뭉치 사이 그림자 틈과
+## 햇빛 반짝임(dapple) 낱개 픽셀로 마무리한다.
+func _make_pixel_leaf_bush_tile(seed_val: int) -> ImageTexture:
+	var grid := 24
+	var px := 3
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_val
+	var clump_a: Color = Color(0.220, 0.450, 0.200, 0.88)
+	var clump_b: Color = Color(0.278, 0.529, 0.243, 0.88)
+	var deep: Color     = Color(0.145, 0.302, 0.133, 0.94)
+	var dapple: Color   = Color(0.420, 0.670, 0.330, 0.92)
+	var edge: Color      = Color(0.106, 0.220, 0.098, 0.96)
+	var cells: Array = []
+	cells.resize(grid * grid)
+	for i in range(cells.size()): cells[i] = clump_a
+	for i in range(6):
+		_stamp_blob_wrapped(cells, grid, rng.randi_range(0, grid - 1), rng.randi_range(0, grid - 1),
+			rng.randi_range(3, 5), clump_b, rng)
+	for i in range(5):
+		_stamp_blob_wrapped(cells, grid, rng.randi_range(0, grid - 1), rng.randi_range(0, grid - 1),
+			rng.randi_range(1, 3), deep, rng)
+	for i in range(5):
+		_stamp_blob_wrapped(cells, grid, rng.randi_range(0, grid - 1), rng.randi_range(0, grid - 1),
+			1, edge, rng)
+	for i in range(10):
+		cells[rng.randi_range(0, grid - 1) * grid + rng.randi_range(0, grid - 1)] = dapple
+	return _blit_logical_grid(cells, grid, px)
 
 # ── 피해 헬퍼 ─────────────────────────────────────────────────────────────────
 ## is_primary_hit: 평타/Q/E/R의 단발성 직접 적중이면 true(기본값) — 궁극기 쿨감 + 히트스톱 발동.
@@ -558,7 +630,8 @@ func _process(dt: float) -> void:
 		while player.r_tick >= 0.5:
 			player.r_tick -= 0.5
 			if player.rect.intersects(dummy.rect):
-				_deal_damage(player, dummy, 70.0, player.job.get("r_dmg", ["physical"]), false)
+				_deal_damage(player, dummy, 70.0 * player.get_effective_dmg_mult(),
+					player.get_effective_dmg_types(player.job.get("r_dmg", ["physical"])), false)
 
 	# 부활 처리
 	if player.dead and player.respawn_time <= 0.0:
@@ -585,19 +658,27 @@ func _process(dt: float) -> void:
 				if not proj.pierce: proj.alive = false
 		if not proj.alive: proj.queue_free(); wind_ult_arrows.erase(proj)
 
-	# 검사자 E 장판 슬램 — Tween 착지 시점에 1회 광역 판정
+	# 검사자 E 장판 슬램 — Tween 착지 시점에 1회 광역 판정 (범위 안에 있으면 시전자 본인도 피해)
 	for fx in sword_effects.duplicate():
 		if fx.consume_just_landed():
 			var hb: Rect2i = fx.hitbox_world()
+			var e_types: Array = player.get_effective_dmg_types(fx.dmg_types)
+			var e_mult: float = player.get_effective_dmg_mult()
 			var did := dummy.get_instance_id()
 			if not (did in fx.hit_done) and hb.intersects(dummy.rect):
-				_deal_damage(player, dummy, dummy.max_hp * player.skill_e.hit_damage_pct, fx.dmg_types)
+				_deal_damage(player, dummy, dummy.max_hp * player.skill_e.hit_damage_pct * e_mult, e_types)
 				fx.hit_done.append(did)
 				swordsman_dots.append({"target": dummy, "time": player.skill_e.dot_duration,
 					"tick": player.skill_e.dot_tick_rate, "owner": player, "damage_types": fx.dmg_types})
+			var pid := player.get_instance_id()
+			if not (pid in fx.hit_done) and hb.intersects(player.rect):
+				_deal_damage(player, player, player.max_hp * player.skill_e.hit_damage_pct * e_mult, e_types)
+				fx.hit_done.append(pid)
+				swordsman_dots.append({"target": player, "time": player.skill_e.dot_duration,
+					"tick": player.skill_e.dot_tick_rate, "owner": player, "damage_types": fx.dmg_types})
 		if not fx.alive: fx.queue_free(); sword_effects.erase(fx)
 
-	# E DoT
+	# E DoT (대상이 더미든 시전자 본인이든 동일하게 처리)
 	for dot in swordsman_dots.duplicate():
 		dot["time"] -= dt; dot["tick"] -= dt
 		if float(dot["time"]) <= 0.0: swordsman_dots.erase(dot); continue
@@ -605,7 +686,8 @@ func _process(dt: float) -> void:
 			dot["tick"] = player.skill_e.dot_tick_rate
 			var tgt = dot["target"]
 			if tgt != null:
-				_deal_damage(player, tgt, max(1.0, float(tgt.hp) * player.skill_e.dot_tick_damage), dot["damage_types"], false)
+				var dot_dmg: float = max(1.0, float(tgt.hp) * player.skill_e.dot_tick_damage) * player.get_effective_dmg_mult()
+				_deal_damage(player, tgt, dot_dmg, player.get_effective_dmg_types(dot["damage_types"]), false)
 
 	# Chip 투사체 (Darby Q)
 	for chip in chips.duplicate():

@@ -397,11 +397,23 @@ func perform_basic_attack() -> bool:
 		_start_ranged_attack(origin, dir)
 	return true
 
-## 현재 검사자 Q 버프 등 상태에 따른 기본 공격 피해 유형 (직업별 예외를 이 한 곳에서 처리)
-func _current_basic_dmg_types() -> Array:
+## 현재 검사자 Q 버프 등 상태에 따른 피해 유형 보정 — 평타뿐 아니라 E/R 등 모든 피해원이
+## 적중 시점(캐스트 시점이 아님)에 이 함수를 거쳐야 Q 지속 중 실시간으로 true타입이 반영된다.
+func get_effective_dmg_types(base_types: Array) -> Array:
 	if job.get("key", "") == "swordsman" and q_buff_time > 0.0:
 		return job.get("q_buffed_basic_dmg", ["true"])
-	return job.get("basic_dmg", ["physical"])
+	return base_types
+
+## Q의 공격력 증가(inc_attack)는 평타 피해엔 attack 스탯을 통해 이미 반영되지만,
+## E/R처럼 attack 스탯을 참조하지 않는 고정/비율 피해 공식은 별도로 이 배율을 곱해야 한다.
+func get_effective_dmg_mult() -> float:
+	if job.get("key", "") == "swordsman" and q_buff_time > 0.0:
+		return 1.0 + inc_attack
+	return 1.0
+
+## 현재 검사자 Q 버프 등 상태에 따른 기본 공격 피해 유형 (직업별 예외를 이 한 곳에서 처리)
+func _current_basic_dmg_types() -> Array:
+	return get_effective_dmg_types(job.get("basic_dmg", ["physical"]))
 
 func _start_melee_attack(dir: Vector2) -> void:
 	start_basic_swing()
