@@ -757,10 +757,6 @@ func _draw_hud() -> void:
 		_hud.draw_string(_font, Vector2(SCR_W/2.0-90.0,SCR_H/2.0),
 			"부활 대기: %.1f초" % maxf(0.0,player.respawn_time),
 			HORIZONTAL_ALIGNMENT_LEFT,-1,38,Color.WHITE)
-	if player.revive_active:
-		_hud.draw_string(_font, Vector2(SCR_W/2.0-100.0,SCR_H/2.0-30.0),
-			"리바이브 트릭컬! %.1f초" % player.revive_time,
-			HORIZONTAL_ALIGNMENT_LEFT,-1,28,Color(0.471,1.0,0.596))
 
 	# 힌트
 	_hud.draw_string(_font, Vector2(16.0,20.0), "ESC 메뉴  F2 즉사테스트",

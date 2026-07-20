@@ -20,6 +20,9 @@ func trigger(player) -> void:
 	player.revive_time    = revive_duration
 	player.hp             = 1.0
 	player.passive_cd_rem = float(player.job.get("passive_cd", 100.0))
+	# 텍스트 알림 대신 캐릭터에게서 빛이 뿜어나오는 파티클로 발동을 알린다.
+	if player.has_method("play_revive_light_burst"):
+		player.play_revive_light_burst(revive_duration)
 
 func update(player, dt: float) -> void:
 	if not player.revive_active:

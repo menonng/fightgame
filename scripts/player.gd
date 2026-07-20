@@ -154,6 +154,35 @@ func play_airborne_visual(duration: float) -> void:
 	tw.tween_property(self, "visual_offset:y", peak, up_time).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
 	tw.tween_property(self, "visual_offset:y", 0.0, down_time).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
 
+## 검사자 패시브(리바이브 트릭컬) 발동 시 텍스트 대신 재생하는 빛무리 파티클.
+## 자식 노드라 player.position(카메라 추종)을 그대로 따라간다.
+func play_revive_light_burst(duration: float) -> void:
+	var p := CPUParticles2D.new()
+	p.name = "ReviveLightBurst"
+	p.position = Vector2(rect.size) / 2.0
+	p.z_index = 5
+	p.amount = 48
+	p.lifetime = 0.9
+	p.explosiveness = 0.15
+	p.one_shot = false
+	p.emitting = true
+	p.direction = Vector2.UP
+	p.spread = 180.0
+	p.gravity = Vector2(0.0, -60.0)
+	p.initial_velocity_min = 40.0
+	p.initial_velocity_max = 130.0
+	p.scale_amount_min = 2.0
+	p.scale_amount_max = 4.5
+	p.color = Color(1.0, 0.96, 0.66, 0.95)
+	add_child(p)
+
+	var stop_timer := get_tree().create_timer(maxf(0.1, duration))
+	stop_timer.timeout.connect(func():
+		if is_instance_valid(p): p.emitting = false)
+	var free_timer := get_tree().create_timer(duration + p.lifetime + 0.1)
+	free_timer.timeout.connect(func():
+		if is_instance_valid(p): p.queue_free())
+
 # ── 색조
 var tint_color: Color = Color.TRANSPARENT
 var tint_time: float  = 0.0

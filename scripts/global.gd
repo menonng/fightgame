@@ -29,11 +29,10 @@ func request_screen_shake(strength: float, duration: float) -> void:
 func request_hitstop(duration: float) -> void:
 	hitstop_requested.emit(duration)
 
+## 다비 투사체/패시브 칩 색상 (빨강/주황/노랑/초록/하늘/파랑/보라/분홍)
 const PALETTE: Array = [
-	Color(0.22, 0.77, 0.73), Color(0.85, 0.00, 0.00), Color(0.00, 0.00, 1.00),
-	Color(1.00, 0.65, 0.00), Color(1.00, 0.89, 0.07), Color(1.00, 0.75, 0.80),
-	Color(0.90, 0.00, 0.20), Color(0.55, 0.78, 0.25), Color(0.96, 0.65, 0.72),
-	Color(0.12, 0.24, 0.86), Color(0.36, 0.25, 0.65),
+	Color("#FF0045"), Color("#FF7E00"), Color("#FFCC11"), Color("#55BB44"),
+	Color("#39C5BB"), Color("#3355BB"), Color("#660099"), Color("#FFB4CC"),
 ]
 
 func random_palette_color() -> Color:
