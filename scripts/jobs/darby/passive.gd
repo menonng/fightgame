@@ -25,8 +25,13 @@ func _roll(player, scene) -> void:
 	var hp_v := float(randi_range(
 		int(j.get("roll_hp_min", 300)),      int(j.get("roll_hp_max", 1000))))
 
-	# HP 비율 보존: 재롤 전 hp/max_hp 비율을 새 max_hp에 그대로 적용
-	var hp_ratio := clampf(player.hp / maxf(1.0, player.max_hp), 0.0, 1.0)
+	# HP 비율 보존: 재롤 전 hp/max_hp 비율을 새 max_hp에 그대로 적용.
+	# 단, 게임 시작 시 첫 롤은 이전 max_hp가 0(다비 기본 스탯이 전부 0)이라
+	# 비율이 0으로 계산되어 체력이 1로 고정되는 버그가 있었다 — 이전 max_hp가
+	# 없을 때(<=0)는 "보존할 이전 상태가 없다"로 보고 풀피(비율 1.0)로 시작한다.
+	var hp_ratio := 1.0
+	if player.max_hp > 0.0:
+		hp_ratio = clampf(player.hp / player.max_hp, 0.0, 1.0)
 
 	player.base_attack       = atk
 	player.base_range        = rng

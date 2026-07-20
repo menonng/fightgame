@@ -69,6 +69,7 @@ var _buffered_action: String = ""  ## "" | "attack" | "q" | "e" | "r"
 
 # ── 노드 ─────────────────────────────────────────────────────────────────────
 var _map_draw: Node2D     = null
+var _burial_draw: Node2D  = null   ## 파묻힘 흙무덤 전용 공용 레이어 — 맵 바로 위, 모든 캐릭터/요소보다 아래
 var _hud_layer: CanvasLayer = null
 var _hud: Control         = null
 var _font: Font           = null
@@ -86,6 +87,13 @@ func _ready() -> void:
 	_map_draw.name = "MapDraw"
 	add_child(_map_draw)
 	_map_draw.draw.connect(_draw_map)
+
+	# 맵 바로 다음, 캐릭터들보다 먼저 추가 — 씬 트리 순서가 곧 렌더 순서이므로
+	# 파묻힘 흙무덤이 항상 지면 위·모든 캐릭터/요소 아래에 그려지도록 보장한다.
+	_burial_draw = Node2D.new()
+	_burial_draw.name = "BurialDraw"
+	add_child(_burial_draw)
+	_burial_draw.draw.connect(_draw_burial_mounds)
 
 	player = Node2D.new()
 	player.name = "Player"
@@ -575,6 +583,7 @@ func _process(dt: float) -> void:
 
 	_update_camera()
 	_map_draw.queue_redraw()
+	_burial_draw.queue_redraw()
 	player.queue_redraw(); dummy.queue_redraw()
 	_hud.queue_redraw()
 
@@ -617,6 +626,28 @@ func _draw_map() -> void:
 
 func _ws(r) -> Rect2:
 	return Rect2(r.position.x - cam_x, r.position.y - cam_y, r.size.x, r.size.y)
+
+# ── 파묻힘 흙무덤 (공용 지면 레이어 — 맵 바로 위, 모든 캐릭터/요소보다 아래) ──────
+func _draw_burial_mounds() -> void:
+	if player.is_buried():
+		var ground := Vector2(player.rect.position.x + player.rect.size.x / 2.0,
+			player.rect.position.y + player.rect.size.y)
+		_draw_one_burial_mound(ground, float(player.SPR_W))
+	if dummy.is_buried():
+		var ground := Vector2(dummy.rect.position.x + dummy.rect.size.x / 2.0,
+			dummy.rect.position.y + dummy.rect.size.y)
+		_draw_one_burial_mound(ground, float(dummy.rect.size.x) * 1.7)
+
+func _draw_one_burial_mound(world_ground: Vector2, width_ref: float) -> void:
+	var screen_pt := world_ground - Vector2(cam_x, cam_y)
+	var dirt_dark := Color(0.145, 0.094, 0.047, 1.0)
+	var dirt_light := Color(0.267, 0.176, 0.098, 1.0)
+	var mound_r := width_ref * 0.62
+	_burial_draw.draw_rect(Rect2(screen_pt.x - mound_r - 20.0, screen_pt.y - 6.0, mound_r * 2.0 + 40.0, 160.0), dirt_dark)
+	_burial_draw.draw_set_transform(Vector2(screen_pt.x, screen_pt.y - 6.0), 0.0, Vector2(1.1, 0.4))
+	_burial_draw.draw_circle(Vector2.ZERO, mound_r, dirt_light)
+	_burial_draw.draw_arc(Vector2.ZERO, mound_r, 0.0, TAU, 24, dirt_dark, 3.0)
+	_burial_draw.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 # ── HUD ───────────────────────────────────────────────────────────────────────
 func _draw_hud() -> void:

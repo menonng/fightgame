@@ -148,6 +148,10 @@ func _draw() -> void:
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 	var r := Rect2(visual_offset.x, buried_oy + visual_offset.y, rect.size.x, rect.size.y)
+	if buried_now:
+		# 파묻힘: 지면 위로 드러난 부분(머리)만 그려 몸통이 무덤 밖으로 새어나오지 않게 한다.
+		# 무덤 자체는 game_scene의 공용 지면 레이어가 맵 바로 위에 별도로 그린다.
+		r.size.y = clampf(float(rect.size.y) - r.position.y, 4.0, float(rect.size.y))
 	draw_rect(r, Color(0.549,0.353,0.196), true, -1.0, true)
 	draw_rect(r, Color(0.196,0.118,0.078), false, 2.0, true)
 	var font := ThemeDB.fallback_font
@@ -164,16 +168,8 @@ func _draw() -> void:
 			var col := Color(0.478,0.082,0.082) if stk >= 5 else Color(0.941,0.941,0.941)
 			draw_circle(Vector2(4.0 + i*10.0 + visual_offset.x, buried_oy + visual_offset.y - 10.0), 4.0, col)
 
-	# 파묻힘 — 지면 아래로 가라앉은 부분을 흙으로 완전히 가리고 봉긋한 흙무덤을 덧그린다.
-	if buried_now:
-		var ground_y := float(rect.size.y)
-		var dirt_dark := Color(0.145, 0.094, 0.047, 1.0)
-		var dirt_light := Color(0.267, 0.176, 0.098, 1.0)
-		draw_rect(Rect2(-16.0, ground_y - 3.0, float(rect.size.x) + 32.0, 120.0), dirt_dark)
-		draw_set_transform(Vector2(rect.size.x / 2.0, ground_y - 5.0), 0.0, Vector2(1.1, 0.4))
-		draw_circle(Vector2.ZERO, float(rect.size.x) * 0.85, dirt_light)
-		draw_arc(Vector2.ZERO, float(rect.size.x) * 0.85, 0.0, TAU, 24, dirt_dark, 3.0)
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# 파묻힘 흙무덤 자체는 이 노드보다 낮은 z-order가 필요해 여기서 그리지 않는다.
+	# game_scene의 공용 지면 레이어(맵 바로 위, 모든 캐릭터/요소보다 아래)가 대신 그린다.
 
 ## Player와 동일한 착지 가이드 링 — 연습 모드 전용
 func _draw_landing_guide(ab: AirborneStatus) -> void:

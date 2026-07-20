@@ -53,7 +53,7 @@ func steal(player, target) -> void:
 
 	if has_stats and target.status != null:
 		target.status.apply(StatDebuffStatus.new(debuff_duration, sa, sh, ss, sx))
-		target.refresh_stats()
+		if target.has_method("refresh_stats"): target.refresh_stats()
 		target.status.apply(TintedStatus.new(debuff_duration, tint_color))
 
 	if player.status != null:

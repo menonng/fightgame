@@ -79,7 +79,7 @@ var basic_swing_angle: float = 0.0
 # 8방향 어디로 움직이든 이 하나의 좌우 진자를 facing 방향으로 사용한다.
 @export_group("걷기 진자 애니메이션 (대충 구현)")
 @export var walk_pivot_ratio: float = 0.35   ## 머리/몸통 분할 지점 (0=정수리, 1=발끝)
-@export var walk_swing_deg: float = 10.0     ## 진자 최대 회전 각도 (도)
+@export var walk_swing_deg: float = 17.5     ## 진자 최대 회전 각도 (도) — 기존 10.0의 1.75배
 @export var walk_swing_speed: float = 9.0    ## 진자 흔들림 속도
 @export var walk_swing_enabled: bool = true  ## on/off
 var _walk_anim_time: float = 0.0
@@ -168,6 +168,8 @@ var respawn_time: float = 0.0
 var vx: float = 0.0; var vy: float = 0.0
 var on_ground: bool  = false
 # 탑다운 전환으로 중력/점프/사다리 물리 제거됨. on_ground는 하위호환용으로 항상 true.
+var in_bush: bool = false        ## 현재 부쉬 내부인지 — 이동속도 감소 + 반투명 연출에 사용
+var _move_frac: Vector2 = Vector2.ZERO   ## move_and_collide_map의 프레임 간 소수점 이동량 누적
 
 # ── 텍스처
 var _tex_body: ImageTexture   = null
@@ -552,23 +554,33 @@ func move_and_collide_map(dt: float, map_solids: Array, map_bushes: Array, world
 	var is_airborne: bool = status != null and status.has(StatusEffect.Kind.AIRBORNE)
 
 	if not is_airborne:
-		# 부쉬 내부에서는 이동속도 감소 (은신·엄폐 지형 성격)
-		var in_bush := false
+		# 부쉬 내부에서는 이동속도 10% 감소 (은신·엄폐 지형 성격) + 외부에는 반투명으로 표시(_draw 참조)
+		in_bush = false
 		for b in map_bushes:
 			if rect.intersects(b): in_bush = true; break
-		var speed_mult := 0.6 if in_bush else 1.0
+		var speed_mult := 0.9 if in_bush else 1.0
 
-		rect = Rect2i(rect.position + Vector2i(int(vx * dt * speed_mult), 0), rect.size)
+		# 소수점 이하 이동량을 프레임 간 누적해 저속/감속 상태에서도 int() 절삭으로
+		# 이동량이 0이 되어 멈춰버리는 현상을 방지한다.
+		_move_frac.x += vx * dt * speed_mult
+		var step_x := int(_move_frac.x)
+		_move_frac.x -= float(step_x)
+		rect = Rect2i(rect.position + Vector2i(step_x, 0), rect.size)
 		for p in map_solids:
 			if rect.intersects(p):
 				if vx > 0: rect.position.x = p.position.x - rect.size.x
 				elif vx < 0: rect.position.x = p.position.x + p.size.x
 
-		rect = Rect2i(rect.position + Vector2i(0, int(vy * dt * speed_mult)), rect.size)
+		_move_frac.y += vy * dt * speed_mult
+		var step_y := int(_move_frac.y)
+		_move_frac.y -= float(step_y)
+		rect = Rect2i(rect.position + Vector2i(0, step_y), rect.size)
 		for p in map_solids:
 			if rect.intersects(p):
 				if vy > 0: rect.position.y = p.position.y - rect.size.y
 				elif vy < 0: rect.position.y = p.position.y + p.size.y
+	else:
+		in_bush = false
 
 	on_ground = true   # 탑다운에는 낙하 개념이 없으므로 항상 지면 취급
 
@@ -644,20 +656,35 @@ func _draw() -> void:
 	else:
 		use_tex = _tex_body
 
+	# 부쉬 내부에서는 반투명 처리 — 은신·엄폐 지형 성격을 외부에서도 알아볼 수 있게 한다.
+	var body_modulate := Color(1.0, 1.0, 1.0, 0.45) if in_bush else Color(1.0, 1.0, 1.0, 1.0)
+
 	if use_tex:
 		var tw := float(use_tex.get_width()); var th := float(use_tex.get_height())
 		if jk == "swordsman" and r_active:
 			var ctr := Vector2(visual_spr_rect.get_center())
 			draw_set_transform(ctr, deg_to_rad(-spin_angle), Vector2(float(SPR_W) / tw * facing, float(SPR_H) / th))
-			draw_texture(use_tex, Vector2(-tw / 2.0, -th / 2.0))
+			draw_texture(use_tex, Vector2(-tw / 2.0, -th / 2.0), body_modulate)
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		elif walk_swing_enabled and _walk_anim_time > 0.0:
-			_draw_body_with_walk_pendulum(use_tex, tw, th, visual_spr_rect)
+			_draw_body_with_walk_pendulum(use_tex, tw, th, visual_spr_rect, body_modulate)
 		else:
-			var src := Rect2(0, 0, tw, th) if facing >= 0 else Rect2(tw, 0, -tw, th)
-			draw_texture_rect_region(use_tex, visual_spr_rect, src)
+			var src_x := 0.0 if facing >= 0 else tw
+			var src_w := tw if facing >= 0 else -tw
+			if buried_now:
+				# 파묻힘: 지면 위로 드러난 부분(머리)만 그려 몸통이 무덤 밖으로 새어나오지 않게 한다.
+				# 무덤 자체는 game_scene의 공용 지면 레이어가 맵 바로 위에 별도로 그린다.
+				var visible_h := clampf(float(rect.size.y) - visual_spr_rect.position.y, 4.0, visual_spr_rect.size.y)
+				var src_h := th * (visible_h / spr_rect.size.y)
+				draw_texture_rect_region(use_tex,
+					Rect2(visual_spr_rect.position, Vector2(visual_spr_rect.size.x, visible_h)),
+					Rect2(src_x, 0.0, src_w, src_h), body_modulate)
+			else:
+				draw_texture_rect_region(use_tex, visual_spr_rect, Rect2(src_x, 0.0, src_w, th), body_modulate)
 	else:
-		draw_rect(visual_spr_rect, Color(0.9, 0.9, 1.0) if team == "blue" else Color(1.0, 0.7, 0.7))
+		var fallback_col := Color(0.9, 0.9, 1.0) if team == "blue" else Color(1.0, 0.7, 0.7)
+		fallback_col.a = body_modulate.a
+		draw_rect(visual_spr_rect, fallback_col)
 
 	# 색조
 	if tint_color != Color.TRANSPARENT:
@@ -706,17 +733,9 @@ func _draw() -> void:
 			draw_circle(orb_pos, 5.0, Color(0.235, 0.784, 0.847))
 			draw_arc(orb_pos, 5.0, 0.0, TAU, 10, Color(0.7, 0.98, 1.0, 0.8), 1.5)
 
-	# 파묻힘 — 지면 아래로 가라앉은 부분을 흙으로 완전히 가리고 봉긋한 흙무덤을 덧그린다.
-	# 그 밖의 모든 요소(스프라이트/검/HP바 등)보다 나중에 그려 확실히 덮는다.
-	if buried_now:
-		var ground_y := float(rect.size.y)
-		var dirt_dark := Color(0.145, 0.094, 0.047, 1.0)
-		var dirt_light := Color(0.267, 0.176, 0.098, 1.0)
-		draw_rect(Rect2(-20.0, ground_y - 4.0, float(rect.size.x) + 40.0, 160.0), dirt_dark)
-		draw_set_transform(Vector2(rect.size.x / 2.0, ground_y - 6.0), 0.0, Vector2(1.1, 0.4))
-		draw_circle(Vector2.ZERO, float(SPR_W) * 0.62, dirt_light)
-		draw_arc(Vector2.ZERO, float(SPR_W) * 0.62, 0.0, TAU, 24, dirt_dark, 3.0)
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# 파묻힘 흙무덤 자체는 이 노드(캐릭터)보다 낮은 z-order가 필요해 여기서 그리지 않는다.
+	# game_scene의 공용 지면 레이어(맵 바로 위, 모든 캐릭터/요소보다 아래)가 대신 그린다.
+	# 이 노드는 스프라이트를 지면 위로 드러난 부분(머리)만 그려 무덤 밖으로 새어나오지 않게 한다.
 
 ## 에어본/넉백 중 착지 예정 지점을 링으로 표시 — 경과 비율에 따라 반경이 서서히 줄어들며 착지 타이밍을 안내.
 ## 정확한 착지 좌표를 드러내는 판정 정보이므로 연습 모드에서만 그린다.
@@ -732,27 +751,31 @@ func _draw_landing_guide(ab: AirborneStatus) -> void:
 
 ## 걷기 진자 애니메이션 — 텍스처를 자르지 않고 소스 UV를 머리/몸통으로 나눠 두 번 그린다.
 ## 머리는 고정, 몸통만 머리 밑동을 축으로 좌우로 흔들려 걷는 느낌을 낸다.
-## facing에 따라 src_x/src_w 부호가 뒤집혀 좌우 반전 스프라이트를 그대로 재사용한다.
-func _draw_body_with_walk_pendulum(tex: ImageTexture, tw: float, th: float, spr_rect: Rect2) -> void:
+## 좌우 반전은 (음수 폭 소스 Rect2가 아니라) r_active 스핀·검/활 그리기와 동일한
+## transform scale 방식으로 처리한다 — 부분 UV 분할에 음수 폭을 쓰면 아무것도
+## 그려지지 않는 문제가 있어 서쪽(facing<0) 이동 시 캐릭터가 통째로 사라지던 버그의 원인이었다.
+func _draw_body_with_walk_pendulum(tex: ImageTexture, tw: float, th: float, spr_rect: Rect2,
+		modulate: Color = Color.WHITE) -> void:
 	var pivot_y_src := th * walk_pivot_ratio
-	var flip := facing < 0
-	var src_x := 0.0 if not flip else tw
-	var src_w := tw if not flip else -tw
+	var scale_x := float(facing)
 
-	# 머리: 고정, 회전 없음
-	var head_src := Rect2(src_x, 0.0, src_w, pivot_y_src)
-	var head_dst := Rect2(spr_rect.position.x, spr_rect.position.y,
-		spr_rect.size.x, spr_rect.size.y * walk_pivot_ratio)
-	draw_texture_rect_region(tex, head_dst, head_src)
+	# 머리: 고정, 회전 없음. 반전만 transform scale로 적용.
+	var head_src := Rect2(0.0, 0.0, tw, pivot_y_src)
+	var head_h := spr_rect.size.y * walk_pivot_ratio
+	var head_ctr := Vector2(spr_rect.get_center().x, spr_rect.position.y + head_h / 2.0)
+	draw_set_transform(head_ctr, 0.0, Vector2(scale_x, 1.0))
+	draw_texture_rect_region(tex, Rect2(-spr_rect.size.x / 2.0, -head_h / 2.0, spr_rect.size.x, head_h),
+		head_src, modulate)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
-	# 몸통: 머리 밑동을 축으로 좌우 진자 회전
-	var body_src := Rect2(src_x, pivot_y_src, src_w, th - pivot_y_src)
+	# 몸통: 머리 밑동을 축으로 좌우 진자 회전 + 반전(같은 transform에 포함)
+	var body_src := Rect2(0.0, pivot_y_src, tw, th - pivot_y_src)
 	var body_h := spr_rect.size.y * (1.0 - walk_pivot_ratio)
 	var body_dst_local := Rect2(-spr_rect.size.x / 2.0, 0.0, spr_rect.size.x, body_h)
 	var swing_angle_deg := sin(_walk_anim_time) * walk_swing_deg
 	var pivot_point := Vector2(spr_rect.get_center().x, spr_rect.position.y + spr_rect.size.y * walk_pivot_ratio)
-	draw_set_transform(pivot_point, deg_to_rad(swing_angle_deg), Vector2.ONE)
-	draw_texture_rect_region(tex, body_dst_local, body_src)
+	draw_set_transform(pivot_point, deg_to_rad(swing_angle_deg), Vector2(scale_x, 1.0))
+	draw_texture_rect_region(tex, body_dst_local, body_src, modulate)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 # 검 (상하반전 후 좌표 기준)

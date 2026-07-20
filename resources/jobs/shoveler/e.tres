@@ -6,7 +6,7 @@
 script = ExtResource("1")
 tomb_w = 56
 tomb_h = 86
-spawn_offset_x = 70.0
+spawn_offset_x = 100.0
 ground_search_range = 40
 hit_damage = 100.0
 rise_speed = 400.0

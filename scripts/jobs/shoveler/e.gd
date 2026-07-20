@@ -8,7 +8,10 @@ extends Resource
 @export var tomb_h: int = 86   ## 높이 (픽셀)
 
 @export_group("스폰 위치")
-@export var spawn_offset_x: float = 70.0  ## 캐릭터 앞 거리 (픽셀)
+@export var spawn_offset_x: float = 100.0  ## 캐릭터 앞 거리 (픽셀)
+## 70px이면 남/북(수직) 조준 시 캐릭터 히트박스(40x60)와 묘석(56x86)의 세로 반폭
+## 합(73px)보다 짧아 묘석이 즉시 고체화되는 순간 캐릭터 rect와 겹쳐 그대로 밀려나는
+## ("튕겨나가는") 버그가 있었다 — 모든 조준 방향에서 안전하도록 여유 있게 상향.
 @export var ground_search_range: int = 40 ## 지면 탐색 범위 (±픽셀)
 
 @export_group("피해 / 물리")

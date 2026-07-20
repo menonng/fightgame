@@ -9,7 +9,7 @@ signal hit_target(target: Node2D, damage: float, dmg_types: Array)
 
 const RADIUS := 10.0
 const HURTBOX_MASK := 2       ## project.godot [layer_names] 2d_physics/layer_2 = "Hurtbox"
-const RANGE_GRACE_TIME := 0.5 ## 사거리 초과 후 소멸까지 유예 시간(초)
+const RANGE_GRACE_TIME := 0.07 ## 사거리 초과 후 소멸까지 유예 시간(초)
 
 var owner_node: Node2D = null
 var scene_ref: Node2D  = null   ## cam_x/cam_y를 읽기 위한 게임 씬 참조
