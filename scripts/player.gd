@@ -74,6 +74,16 @@ var basic_swing_time: float  = 0.0
 var basic_swing_duration: float = 0.14
 var basic_swing_angle: float = 0.0
 
+# ── 걷기 진자 애니메이션 (대충 구현) ────────────────────────────────────────
+# 스프라이트는 동서(좌우) 걷기 모션 하나뿐 — 남북 전용 모션은 없다.
+# 8방향 어디로 움직이든 이 하나의 좌우 진자를 facing 방향으로 사용한다.
+@export_group("걷기 진자 애니메이션 (대충 구현)")
+@export var walk_pivot_ratio: float = 0.35   ## 머리/몸통 분할 지점 (0=정수리, 1=발끝)
+@export var walk_swing_deg: float = 10.0     ## 진자 최대 회전 각도 (도)
+@export var walk_swing_speed: float = 9.0    ## 진자 흔들림 속도
+@export var walk_swing_enabled: bool = true  ## on/off
+var _walk_anim_time: float = 0.0
+
 # ── Wind Archer
 var wind_q_active: bool  = false
 var wind_q_time: float   = 0.0
@@ -438,6 +448,15 @@ func player_update(dt: float) -> void:
 	if status != null: status.update(dt)
 	_apply_airborne_position()
 
+	# 걷기 진자 애니메이션 시간 누적 — 8방향(대각선·순수 상하 포함) 모두 이동 중이면 재생.
+	# 스프라이트는 동서 모션 하나뿐이므로 방향과 무관하게 동일한 좌우 진자를 사용하고,
+	# 좌우를 뒤집을지(facing)는 handle_input에서 "가장 최근의 좌우 이동 방향"으로 이미 결정됨.
+	var is_moving := Vector2(vx, vy).length() > 5.0
+	if is_moving and not dead and not revive_active:
+		_walk_anim_time += dt * walk_swing_speed
+	else:
+		_walk_anim_time = 0.0
+
 	attack_cd_rem = max(0.0, attack_cd_rem - dt)
 	if basic_swing_time > 0.0:
 		basic_swing_time = max(0.0, basic_swing_time - dt)
@@ -519,7 +538,10 @@ func handle_input(dt: float, map_solids: Array, map_bushes: Array = []) -> void:
 		dir = dir.normalized()   # 대각선 이동 속도 보정
 	vx = dir.x * move_speed
 	vy = dir.y * move_speed
-
+	# 스프라이트는 동서(좌우) 걷기 모션만 존재 — 남북 전용 모션 없음.
+	# 북/북동/북서, 남/남동/남서 전부 동서 진자를 그대로 사용.
+	# 순수 상하 이동(vx == 0)일 때는 facing을 갱신하지 않아
+	# "가장 최근에 이동했던 좌우 방향"이 그대로 유지된다.
 	if abs(vx) > 0.01: facing = 1 if vx > 0.0 else -1
 
 ## 탑다운 평면 충돌 — 부쉬(bush)는 통과 가능한 감속 지형, solids만 완전 차단
@@ -629,6 +651,8 @@ func _draw() -> void:
 			draw_set_transform(ctr, deg_to_rad(-spin_angle), Vector2(float(SPR_W) / tw * facing, float(SPR_H) / th))
 			draw_texture(use_tex, Vector2(-tw / 2.0, -th / 2.0))
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		elif walk_swing_enabled and _walk_anim_time > 0.0:
+			_draw_body_with_walk_pendulum(use_tex, tw, th, visual_spr_rect)
 		else:
 			var src := Rect2(0, 0, tw, th) if facing >= 0 else Rect2(tw, 0, -tw, th)
 			draw_texture_rect_region(use_tex, visual_spr_rect, src)
@@ -704,6 +728,31 @@ func _draw_landing_guide(ab: AirborneStatus) -> void:
 	draw_set_transform(local_target, 0.0, Vector2(1.0, 0.4))
 	draw_arc(Vector2.ZERO, r, 0.0, TAU, 24, Color(1.0, 0.35, 0.35, 0.85), 3.0)
 	draw_circle(Vector2.ZERO, r * 0.3, Color(1.0, 0.35, 0.35, 0.55))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+## 걷기 진자 애니메이션 — 텍스처를 자르지 않고 소스 UV를 머리/몸통으로 나눠 두 번 그린다.
+## 머리는 고정, 몸통만 머리 밑동을 축으로 좌우로 흔들려 걷는 느낌을 낸다.
+## facing에 따라 src_x/src_w 부호가 뒤집혀 좌우 반전 스프라이트를 그대로 재사용한다.
+func _draw_body_with_walk_pendulum(tex: ImageTexture, tw: float, th: float, spr_rect: Rect2) -> void:
+	var pivot_y_src := th * walk_pivot_ratio
+	var flip := facing < 0
+	var src_x := 0.0 if not flip else tw
+	var src_w := tw if not flip else -tw
+
+	# 머리: 고정, 회전 없음
+	var head_src := Rect2(src_x, 0.0, src_w, pivot_y_src)
+	var head_dst := Rect2(spr_rect.position.x, spr_rect.position.y,
+		spr_rect.size.x, spr_rect.size.y * walk_pivot_ratio)
+	draw_texture_rect_region(tex, head_dst, head_src)
+
+	# 몸통: 머리 밑동을 축으로 좌우 진자 회전
+	var body_src := Rect2(src_x, pivot_y_src, src_w, th - pivot_y_src)
+	var body_h := spr_rect.size.y * (1.0 - walk_pivot_ratio)
+	var body_dst_local := Rect2(-spr_rect.size.x / 2.0, 0.0, spr_rect.size.x, body_h)
+	var swing_angle_deg := sin(_walk_anim_time) * walk_swing_deg
+	var pivot_point := Vector2(spr_rect.get_center().x, spr_rect.position.y + spr_rect.size.y * walk_pivot_ratio)
+	draw_set_transform(pivot_point, deg_to_rad(swing_angle_deg), Vector2.ONE)
+	draw_texture_rect_region(tex, body_dst_local, body_src)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 # 검 (상하반전 후 좌표 기준)
