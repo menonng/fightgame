@@ -27,7 +27,9 @@ func on_apply(target) -> void:
 	target.move_lock_time   = maxf(target.get("move_lock_time"),   time_left)
 	target.attack_lock_time = maxf(target.get("attack_lock_time"), time_left)
 	target.skill_lock_time  = maxf(target.get("skill_lock_time"),  time_left)
-	# 시각 연출은 game_scene / player가 on_apply 이후 target.get_airborne_status()로 조회해 Tween을 건다.
+	# 시각 연출: Sprite2D.position을 Tween으로 살짝 띄웠다 복귀시키는 "눈속임" (히트박스는 무관)
+	if target.has_method("play_airborne_visual"):
+		target.play_airborne_visual(time_left)
 
 ## 현재 경과 비율(0~1) 기반으로 위치 보간 — player_update에서 매 프레임 호출해 rect.position에 반영
 func get_current_pos() -> Vector2:

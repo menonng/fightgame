@@ -75,6 +75,18 @@ func _apply_airborne_position() -> void:
 	rect.position = Vector2i(ab.get_current_pos())
 	position = Vector2(rect.position)
 
+# ── 시각 전용 오프셋 (Player와 동일한 "그림자 고정 + 스프라이트 Tween" 연출) ──
+var visual_offset: Vector2 = Vector2.ZERO
+
+func play_airborne_visual(duration: float) -> void:
+	visual_offset = Vector2.ZERO
+	var peak := -40.0
+	var up_time := max(0.05, duration * 0.35)
+	var down_time := max(0.05, duration * 0.65)
+	var tw := create_tween()
+	tw.tween_property(self, "visual_offset:y", peak, up_time).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(self, "visual_offset:y", 0.0, down_time).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+
 func take_damage(dmg: float, _types: Array = []) -> float:
 	hp -= dmg; total_damage_taken += dmg; last_damage = dmg; last_damage_t = 1.2; return dmg
 
@@ -101,14 +113,27 @@ func dummy_update(dt: float, map_solids: Array, map_bushes: Array = []) -> void:
 func _draw() -> void:
 	var buried_oy := 0.0
 	if is_buried(): buried_oy = rect.size.y * 0.6
-	var r := Rect2(0, buried_oy, rect.size.x, rect.size.y)
+
+	# 착지 지점 가이드 (에어본/넉백 중)
+	var ab := airborne_status()
+	if ab != null: _draw_landing_guide(ab)
+
+	# 그림자 — 스프라이트가 Tween으로 떠 있는 동안에도 지면 기준으로 고정
+	if absf(visual_offset.y) > 0.5:
+		var shadow_ctr := Vector2(rect.size.x / 2.0, rect.size.y - 4.0)
+		var shrink := clampf(1.0 - absf(visual_offset.y) / 60.0, 0.35, 1.0)
+		draw_set_transform(shadow_ctr, 0.0, Vector2(1.0, 0.35))
+		draw_circle(Vector2.ZERO, (rect.size.x / 2.0) * shrink, Color(0.0, 0.0, 0.0, 0.35))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+	var r := Rect2(visual_offset.x, buried_oy + visual_offset.y, rect.size.x, rect.size.y)
 	draw_rect(r, Color(0.549,0.353,0.196), true, -1.0, true)
 	draw_rect(r, Color(0.196,0.118,0.078), false, 2.0, true)
 	var font := ThemeDB.fallback_font
-	draw_string(font, Vector2(rect.size.x/2.0-22.0, -6.0 + buried_oy),
+	draw_string(font, Vector2(rect.size.x/2.0-22.0 + visual_offset.x, -6.0 + buried_oy + visual_offset.y),
 		"DMG %d" % int(total_damage_taken), HORIZONTAL_ALIGNMENT_LEFT,-1,15,Color(1.0,0.922,0.706))
 	if last_damage_t > 0.0:
-		draw_string(font, Vector2(rect.size.x/2.0-14.0, -20.0 + buried_oy),
+		draw_string(font, Vector2(rect.size.x/2.0-14.0 + visual_offset.x, -20.0 + buried_oy + visual_offset.y),
 			"-%d" % int(last_damage), HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color(1.0,0.784,0.471))
 	# Shovel 스택 점
 	var stk := shovel_stack_count()
@@ -116,4 +141,14 @@ func _draw() -> void:
 	if stk > 0 and stk < 6:
 		for i in range(stk):
 			var col := Color(0.478,0.082,0.082) if stk >= 5 else Color(0.941,0.941,0.941)
-			draw_circle(Vector2(4.0 + i*10.0, buried_oy - 10.0), 4.0, col)
+			draw_circle(Vector2(4.0 + i*10.0 + visual_offset.x, buried_oy + visual_offset.y - 10.0), 4.0, col)
+
+## Player와 동일한 착지 가이드 링
+func _draw_landing_guide(ab: AirborneStatus) -> void:
+	var local_target := Vector2(ab.landing_pos) - Vector2(rect.position) + Vector2(rect.size) / 2.0
+	var t := 1.0 - clampf(ab.time_left / max(0.001, ab.total_duration), 0.0, 1.0)
+	var r := lerpf(24.0, 10.0, t)
+	draw_set_transform(local_target, 0.0, Vector2(1.0, 0.4))
+	draw_arc(Vector2.ZERO, r, 0.0, TAU, 24, Color(1.0, 0.35, 0.35, 0.85), 3.0)
+	draw_circle(Vector2.ZERO, r * 0.3, Color(1.0, 0.35, 0.35, 0.55))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)

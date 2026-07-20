@@ -125,6 +125,21 @@ func _apply_airborne_position() -> void:
 	rect.position = Vector2i(ab.get_current_pos())
 	position = Vector2(rect.position)
 
+# ── 시각 전용 오프셋 (히트박스는 그대로 두고 스프라이트만 Tween으로 띄우는 "눈속임") ──
+var visual_offset: Vector2 = Vector2.ZERO
+
+## 에어본/넉백 부여 시 StatusEffect가 호출. 실제 위치(rect)는 건드리지 않고
+## 스프라이트만 위로 살짝 띄웠다 원위치로 복귀시켜 붕 뜬 느낌을 연출.
+## 그림자(사거리 링 아래 고정 표시)는 rect 기준 그대로 유지되어 입체감을 만든다.
+func play_airborne_visual(duration: float) -> void:
+	visual_offset = Vector2.ZERO
+	var peak := -48.0
+	var up_time := max(0.05, duration * 0.35)
+	var down_time := max(0.05, duration * 0.65)
+	var tw := create_tween()
+	tw.tween_property(self, "visual_offset:y", peak, up_time).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(self, "visual_offset:y", 0.0, down_time).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+
 # ── 색조
 var tint_color: Color = Color.TRANSPARENT
 var tint_time: float  = 0.0
@@ -464,6 +479,20 @@ func _draw() -> void:
 	var spr_x := float(rect.size.x / 2 - SPR_W / 2)
 	var spr_y := float(rect.size.y - SPR_H) - buried_oy
 	var spr_rect := Rect2(spr_x, spr_y, float(SPR_W), float(SPR_H))
+	# 시각 전용 오프셋이 적용된 스프라이트 사각형 (히트박스인 rect/spr_rect는 그대로 유지)
+	var visual_spr_rect := Rect2(spr_rect.position + visual_offset, spr_rect.size)
+
+	# 착지 지점 가이드 (에어본/넉백 중)
+	var ab := airborne_status()
+	if ab != null: _draw_landing_guide(ab)
+
+	# 그림자 — 스프라이트가 Tween으로 떠 있는 동안에도 지면(spr_rect) 기준으로 고정
+	if absf(visual_offset.y) > 0.5:
+		var shadow_ctr := Vector2(spr_rect.get_center().x, spr_rect.position.y + spr_rect.size.y - 6.0)
+		var shrink := clampf(1.0 - absf(visual_offset.y) / 60.0, 0.35, 1.0)
+		draw_set_transform(shadow_ctr, 0.0, Vector2(1.0, 0.35))
+		draw_circle(Vector2.ZERO, (SPR_W / 2.5) * shrink, Color(0.0, 0.0, 0.0, 0.35))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 	# 사거리 링
 	if is_human:
@@ -474,19 +503,19 @@ func _draw() -> void:
 	if jk == "wind_archer" and wind_q_active:
 		var atex := _tex_wind_q_fancy if wind_q_time > 3.0 else _tex_wind_q_simple
 		if atex:
-			var ctr := Vector2(spr_rect.get_center())
+			var ctr := Vector2(visual_spr_rect.get_center())
 			draw_texture(atex, ctr - Vector2(atex.get_width() / 2.0, atex.get_height() / 2.0))
 
 	# Swordsman Q 방어막
 	if jk == "swordsman" and q_buff_time > 0.0:
-		var ctr := Vector2(spr_rect.get_center()); var sr := 59.0
+		var ctr := Vector2(visual_spr_rect.get_center()); var sr := 59.0
 		draw_circle(ctr, sr, Color(0.471, 0.824, 1.0, 0.216))
 		draw_arc(ctr, sr, 0.0, TAU, 48, Color(0.706, 0.922, 1.0, 0.706), 4.0)
 
 	# Darby R 오라
 	if jk == "darby" and darby_r_active:
-		var ctr := Vector2(spr_rect.get_center())
-		var ar  := Rect2(spr_rect.position - Vector2(20, 20), spr_rect.size + Vector2(40, 40))
+		var ctr := Vector2(visual_spr_rect.get_center())
+		var ar  := Rect2(visual_spr_rect.position - Vector2(20, 20), visual_spr_rect.size + Vector2(40, 40))
 		draw_rect(ar, Color(0.784, 0.157, 0.235, 0.314))
 		draw_rect(ar, Color(1.0, 0.314, 0.392, 0.588), false)
 
@@ -496,7 +525,7 @@ func _draw() -> void:
 	if stack_n > 0 and stack_n < 6:
 		for i in range(stack_n):
 			var dot_col := Color(0.478, 0.082, 0.082) if stack_n >= 5 else Color(0.941, 0.941, 0.941)
-			draw_circle(Vector2(4.0 + i * 10.0, spr_y - 10.0), 4.0, dot_col)
+			draw_circle(Vector2(4.0 + i * 10.0, spr_y + visual_offset.y - 10.0), 4.0, dot_col)
 
 	# 바디 스프라이트
 	var use_tex: ImageTexture = null
@@ -508,23 +537,23 @@ func _draw() -> void:
 	if use_tex:
 		var tw := float(use_tex.get_width()); var th := float(use_tex.get_height())
 		if jk == "swordsman" and r_active:
-			var ctr := Vector2(spr_rect.get_center())
+			var ctr := Vector2(visual_spr_rect.get_center())
 			draw_set_transform(ctr, deg_to_rad(-spin_angle), Vector2(float(SPR_W) / tw * facing, float(SPR_H) / th))
 			draw_texture(use_tex, Vector2(-tw / 2.0, -th / 2.0))
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		else:
 			var src := Rect2(0, 0, tw, th) if facing >= 0 else Rect2(tw, 0, -tw, th)
-			draw_texture_rect_region(use_tex, spr_rect, src)
+			draw_texture_rect_region(use_tex, visual_spr_rect, src)
 	else:
-		draw_rect(spr_rect, Color(0.9, 0.9, 1.0) if team == "blue" else Color(1.0, 0.7, 0.7))
+		draw_rect(visual_spr_rect, Color(0.9, 0.9, 1.0) if team == "blue" else Color(1.0, 0.7, 0.7))
 
 	# 색조
 	if tint_color != Color.TRANSPARENT:
-		var tc := tint_color; tc.a = 0.35; draw_rect(spr_rect, tc)
+		var tc := tint_color; tc.a = 0.35; draw_rect(visual_spr_rect, tc)
 
 	# Swordsman 검
 	if jk == "swordsman":
-		var ctr := Vector2(spr_rect.get_center()); var top := spr_rect.position.y
+		var ctr := Vector2(visual_spr_rect.get_center()); var top := visual_spr_rect.position.y
 		var sw := 26.0; var sh := 74.0; var cx := sw / 2.0; var cy := sh / 2.0
 		if r_active:
 			draw_set_transform(ctr, deg_to_rad(-spin_angle), Vector2(float(facing), 1.0))
@@ -539,17 +568,17 @@ func _draw() -> void:
 
 	# Wind Archer 활
 	if jk == "wind_archer" and not wind_e_active:
-		var ctr := Vector2(spr_rect.get_center())
+		var ctr := Vector2(visual_spr_rect.get_center())
 		var bw := 24.0; var bh := 18.0
 		var bx := ctr.x + 4.0 if facing >= 0 else ctr.x - bw - 4.0
 		draw_set_transform(Vector2(bx + bw / 2.0, ctr.y - 8.0 + bh / 2.0), 0.0, Vector2(float(facing), 1.0))
 		_draw_bow_shape(bw, bh)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
-	# HP 바
+	# HP 바 (스프라이트를 따라 함께 떠오름)
 	if max_hp > 0.0:
 		var ratio := maxf(0.0, minf(1.0, hp / max_hp))
-		var by    := spr_y - 24.0
+		var by    := spr_y + visual_offset.y - 24.0
 		draw_rect(Rect2(0, by, float(rect.size.x), 6.0), Color(0, 0, 0))
 		draw_rect(Rect2(0, by, float(rect.size.x) * ratio, 6.0),
 			Color(0.275, 0.51, 1.0) if team == "blue" else Color(1.0, 0.31, 0.31))
@@ -557,7 +586,17 @@ func _draw() -> void:
 	# Wind 패시브 스택
 	if jk == "wind_archer" and wind_passive_stacks > 0:
 		for i in range(wind_passive_stacks):
-			draw_circle(Vector2(4.0 + i * 10.0, spr_y - 10.0), 4.0, Color(0.235, 0.784, 0.847))
+			draw_circle(Vector2(4.0 + i * 10.0, spr_y + visual_offset.y - 10.0), 4.0, Color(0.235, 0.784, 0.847))
+
+## 에어본/넉백 중 착지 예정 지점을 링으로 표시 — 경과 비율에 따라 반경이 서서히 줄어들며 착지 타이밍을 안내.
+func _draw_landing_guide(ab: AirborneStatus) -> void:
+	var local_target := Vector2(ab.landing_pos) - Vector2(rect.position) + Vector2(rect.size) / 2.0
+	var t := 1.0 - clampf(ab.time_left / max(0.001, ab.total_duration), 0.0, 1.0)
+	var r := lerpf(30.0, 12.0, t)
+	draw_set_transform(local_target, 0.0, Vector2(1.0, 0.4))
+	draw_arc(Vector2.ZERO, r, 0.0, TAU, 24, Color(1.0, 0.35, 0.35, 0.85), 3.0)
+	draw_circle(Vector2.ZERO, r * 0.3, Color(1.0, 0.35, 0.35, 0.55))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 # 검 (상하반전 후 좌표 기준)
 func _draw_sword_shape(cx: float, cy: float) -> void:

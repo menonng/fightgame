@@ -5,7 +5,7 @@ extends Node2D
 const PlayerScript  := preload("res://scripts/player.gd")
 const DummyScript   := preload("res://scripts/dummy.gd")
 const ProjScript    := preload("res://scripts/projectile.gd")
-const SwordScript   := preload("res://scripts/falling_sword.gd")
+const SwordScript   := preload("res://scripts/sword_slam.gd")
 const ChipScript    := preload("res://scripts/chip_projectile.gd")
 const DirtScript    := preload("res://scripts/dirt_particle.gd")
 const TombScript    := preload("res://scripts/tombstone.gd")
@@ -314,12 +314,15 @@ func _press_e() -> void:
 	match jk:
 		"swordsman":
 			if player.skill_e != null and player.skill_e.can_use(player):
+				var mouse_world := get_viewport().get_mouse_position() + Vector2(cam_x, cam_y)
+				var target_pos: Vector2 = player.skill_e.get_target_pos(player, mouse_world)
 				var fx := Node2D.new()
-				fx.name = "FallingSword"
+				fx.name = "SwordSlam"
 				fx.set_script(SwordScript)
 				add_child(fx)
 				fx.owner_node = player; fx.dmg_types = player.job.get("e_dmg", ["physical"])
-				fx.setup(float(player.rect.get_center().x), cam_y, player)
+				fx.setup(target_pos, player, player.skill_e.slam_radius,
+					player.skill_e.leap_height, player.skill_e.leap_up_time, player.skill_e.leap_down_time)
 				sword_effects.append(fx)
 				player.skill_e.activate(player)
 		"wind_archer":
@@ -390,6 +393,12 @@ func _check_darby_q_confirm() -> void:
 func _process(dt: float) -> void:
 	var jk: String = player.job.get("key", "")
 
+	# 탑다운 360도 조준 방향 — 마우스 월드 좌표 기준, 매 프레임 갱신 (Q/E/R 스킬 각도 계산에 사용)
+	var mouse_world := get_viewport().get_mouse_position() + Vector2(cam_x, cam_y)
+	var to_mouse := mouse_world - Vector2(player.rect.get_center())
+	if to_mouse.length() > 0.01:
+		player.aim_dir = to_mouse.normalized()
+
 	# 타겟팅 타이머
 	if targeting_active:
 		targeting_timer -= dt
@@ -449,17 +458,16 @@ func _process(dt: float) -> void:
 				if not proj.pierce: proj.alive = false
 		if not proj.alive: proj.queue_free(); wind_ult_arrows.erase(proj)
 
-	# 검사자 E 낙하검
+	# 검사자 E 장판 슬램 — Tween 착지 시점에 1회 광역 판정
 	for fx in sword_effects.duplicate():
-		fx.sword_update(dt, cam_y)
-		if fx.alive:
+		if fx.consume_just_landed():
 			var hb := fx.hitbox_world()
 			var did := dummy.get_instance_id()
 			if not (did in fx.hit_done) and hb.intersects(dummy.rect):
-				_deal_damage(player, dummy, dummy.max_hp * 0.10, fx.dmg_types)
+				_deal_damage(player, dummy, dummy.max_hp * player.skill_e.hit_damage_pct, fx.dmg_types)
 				fx.hit_done.append(did)
-				swordsman_dots.append({"target": dummy, "time": 10.0, "tick": 0.25,
-					"owner": player, "damage_types": fx.dmg_types})
+				swordsman_dots.append({"target": dummy, "time": player.skill_e.dot_duration,
+					"tick": player.skill_e.dot_tick_rate, "owner": player, "damage_types": fx.dmg_types})
 		if not fx.alive: fx.queue_free(); sword_effects.erase(fx)
 
 	# E DoT
@@ -467,10 +475,10 @@ func _process(dt: float) -> void:
 		dot["time"] -= dt; dot["tick"] -= dt
 		if float(dot["time"]) <= 0.0: swordsman_dots.erase(dot); continue
 		if float(dot["tick"]) <= 0.0:
-			dot["tick"] = 0.25
+			dot["tick"] = player.skill_e.dot_tick_rate
 			var tgt = dot["target"]
 			if tgt != null:
-				_deal_damage(player, tgt, max(1.0, float(tgt.hp) * 0.005), dot["damage_types"])
+				_deal_damage(player, tgt, max(1.0, float(tgt.hp) * player.skill_e.dot_tick_damage), dot["damage_types"])
 
 	# Chip 투사체 (Darby Q)
 	for chip in chips.duplicate():
@@ -535,7 +543,7 @@ func _update_camera() -> void:
 	for d in dirt_particles:
 		if is_instance_valid(d): d.position = d._world_pos + off
 	for fx in sword_effects:
-		if is_instance_valid(fx): fx.position = Vector2(fx.world_x - cam_x, fx.y - cam_y)
+		if is_instance_valid(fx): fx.position = fx.target_pos + off
 
 # ── 맵 렌더 ──────────────────────────────────────────────────────────────────
 func _draw_map() -> void:
@@ -667,7 +675,7 @@ func _draw_hud() -> void:
 	# 힌트
 	_hud.draw_string(_font, Vector2(16.0,20.0), "ESC 메뉴  F2 즉사테스트",
 		HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color(0.6,0.6,0.65))
-	var hint := "A/D 이동  W 점프  Q/E/R 스킬  좌클릭 기본공격"
+	var hint := "WASD/방향키 이동  마우스 조준  Q/E/R 스킬  좌클릭 기본공격"
 	if jk == "darby": hint += "  [Q: 1회 눌러 타겟팅, 재클릭으로 확인]"
 	_hud.draw_string(_font, Vector2(16.0,SCR_H-18.0), hint,
 		HORIZONTAL_ALIGNMENT_LEFT,-1,13,Color(0.5,0.5,0.55))
