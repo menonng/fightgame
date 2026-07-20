@@ -17,6 +17,11 @@ const WORLD_W := 2100; const WORLD_H := 1400
 var map_solids: Array = []   ## 완전 차단 지형 (경계 벽)
 var map_bushes: Array = []   ## 부쉬 — 통과 가능, 이동속도 감소 + 은신 성격
 
+# ── 맵 픽셀 아트 텍스처 — 직업 스프라이트와 같은 픽셀 디자인 톤으로 절차 생성 ─────
+var _tex_floor: ImageTexture = null
+var _tex_wall: ImageTexture  = null
+var _tex_bush: ImageTexture  = null
+
 # ── 엔티티 ───────────────────────────────────────────────────────────────────
 var player: Node2D  = null
 var dummy: Node2D   = null
@@ -82,6 +87,7 @@ const HUD_Q_X := 460; const HUD_P_X := 392; const HUD_E_X := 528; const HUD_R_X 
 func _ready() -> void:
 	_font = ThemeDB.fallback_font
 	_build_map()
+	_build_pixel_map_textures()
 
 	_map_draw = Node2D.new()
 	_map_draw.name = "MapDraw"
@@ -152,6 +158,64 @@ func _build_map() -> void:
 		Rect2i(1200, 1120, 280, 200),
 		Rect2i(180, 1000, 200, 180),
 	]
+
+## 직업 스프라이트(assets/*.png)와 톤을 맞춘 절차적 픽셀 아트 타일 3종을 만들어
+## draw_texture_rect(tile=true)로 맵 전체에 반복시킨다. 새 그래픽 파일을 추가하는
+## 대신 코드로 생성해 이 프로젝트의 "전부 코드로 그린다" 관례를 그대로 따른다.
+func _build_pixel_map_textures() -> void:
+	_tex_floor = _make_pixel_noise_tile(
+		[Color(0.129,0.161,0.106), Color(0.161,0.196,0.129), Color(0.098,0.122,0.082), Color(0.184,0.235,0.145)],
+		[62, 20, 14, 4], 16, 4, 1001)
+	_tex_wall = _make_pixel_brick_tile(
+		Color(0.196,0.298,0.196), Color(0.106,0.161,0.110), Color(0.243,0.360,0.235), 8, 5, 4, 2002)
+	_tex_bush = _make_pixel_noise_tile(
+		[Color(0.220,0.450,0.200,0.88), Color(0.278,0.529,0.243,0.88), Color(0.145,0.302,0.133,0.92), Color(0.322,0.580,0.290,0.85)],
+		[46, 22, 24, 8], 16, 4, 3003)
+
+## 여러 색조 중 가중치대로 무작위 선택해 채운 grid×grid 크기(1칸 = px×px 실픽셀)의
+## 노이즈 타일 — 잔디/수풀처럼 우둘투둘한 픽셀 텍스처에 사용.
+func _make_pixel_noise_tile(shades: Array, weights: Array, grid: int, px: int, seed_val: int) -> ImageTexture:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_val
+	var total := 0
+	for w in weights: total += int(w)
+	var img := Image.create_empty(grid * px, grid * px, false, Image.FORMAT_RGBA8)
+	for gy in range(grid):
+		for gx in range(grid):
+			var roll := rng.randi_range(0, total - 1)
+			var acc := 0
+			var chosen: Color = shades[0]
+			for i in range(shades.size()):
+				acc += int(weights[i])
+				if roll < acc: chosen = shades[i]; break
+			for py in range(px):
+				for pxi in range(px):
+					img.set_pixel(gx * px + pxi, gy * px + py, chosen)
+	return ImageTexture.create_from_image(img)
+
+## 벽돌처럼 줄마다 어긋나게 배치된 사각 블록 + 모르타르 틈 패턴의 타일 — 경계벽에 사용.
+func _make_pixel_brick_tile(base: Color, mortar: Color, highlight: Color,
+		brick_w: int, brick_h: int, px: int, seed_val: int) -> ImageTexture:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_val
+	var rows := 4
+	var cols := 6
+	var img := Image.create_empty(cols * brick_w * px, rows * brick_h * px, false, Image.FORMAT_RGBA8)
+	img.fill(mortar)
+	for row in range(rows):
+		var offset := (brick_w / 2) if row % 2 == 1 else 0
+		for col in range(-1, cols + 1):
+			var bx := col * brick_w + offset
+			var by := row * brick_h
+			var tint: Color = base if rng.randi_range(0, 3) > 0 else highlight
+			for py in range(1, brick_h - 1):
+				for pxi in range(1, brick_w - 1):
+					var ix := bx + pxi; var iy := by + py
+					if ix >= 0 and ix < cols * brick_w and iy >= 0 and iy < rows * brick_h:
+						for sy in range(px):
+							for sx in range(px):
+								img.set_pixel(ix * px + sx, iy * px + sy, tint)
+	return ImageTexture.create_from_image(img)
 
 # ── 피해 헬퍼 ─────────────────────────────────────────────────────────────────
 ## is_primary_hit: 평타/Q/E/R의 단발성 직접 적중이면 true(기본값) — 궁극기 쿨감 + 히트스톱 발동.
@@ -615,16 +679,16 @@ func _update_camera() -> void:
 
 # ── 맵 렌더 ──────────────────────────────────────────────────────────────────
 func _draw_map() -> void:
-	# 바닥 (전체 평면 배경)
-	_map_draw.draw_rect(_ws(Rect2i(0, 0, WORLD_W, WORLD_H)), Color(0.13, 0.16, 0.11))
-	# 경계 벽
+	# 바닥 (전체 평면 배경) — 절차 생성한 픽셀 노이즈 타일을 반복
+	_map_draw.draw_texture_rect(_tex_floor, _ws(Rect2i(0, 0, WORLD_W, WORLD_H)), true)
+	# 경계 벽 — 픽셀 벽돌 타일 + 테두리 외곽선(스프라이트의 두꺼운 아웃라인 톤과 통일)
 	for r in map_solids:
-		_map_draw.draw_rect(_ws(r), Color(0.18, 0.35, 0.22))
-		_map_draw.draw_rect(_ws(r), Color(0.10, 0.18, 0.11), false)
-	# 부쉬 — 통과 가능한 엄폐 지형, 반투명 녹색으로 표시
+		_map_draw.draw_texture_rect(_tex_wall, _ws(r), true)
+		_map_draw.draw_rect(_ws(r), Color(0.078, 0.118, 0.082), false, 3.0)
+	# 부쉬 — 통과 가능한 엄폐 지형, 픽셀 노이즈 타일 + 반투명 외곽선
 	for r in map_bushes:
-		_map_draw.draw_rect(_ws(r), Color(0.22, 0.45, 0.20, 0.75))
-		_map_draw.draw_rect(_ws(r), Color(0.14, 0.30, 0.13, 0.9), false, 2.0)
+		_map_draw.draw_texture_rect(_tex_bush, _ws(r), true)
+		_map_draw.draw_rect(_ws(r), Color(0.106, 0.220, 0.098, 0.9), false, 3.0)
 
 func _ws(r) -> Rect2:
 	return Rect2(r.position.x - cam_x, r.position.y - cam_y, r.size.x, r.size.y)
