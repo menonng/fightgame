@@ -6,7 +6,7 @@
 script = ExtResource("1")
 thresholds = Array[int]([3, 5, 7, 9])
 reset_at = 16
-bonus_range_per = 25.0
+bonus_range_per = 50.0
 bonus_atk_spd_per = 0.15
 bonus_attack_per = 5.0
 bonus_proj_spd_per = 0.1

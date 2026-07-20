@@ -7,7 +7,7 @@ extends Resource
 @export_group("전투 스탯")
 @export var attack:       float = 50.0    ## 기본 공격력
 @export var hp:           float = 1500.0  ## 최대 체력
-@export var range_px:     float = 40.0    ## 공격 사거리 (픽셀)
+@export var range_px:     float = 80.0    ## 공격 사거리 (픽셀)
 @export var move_speed:   float = 240.0   ## 이동 속도 (px/s)
 @export var attack_speed: float = 0.8     ## 공격 속도 (회/s)
 

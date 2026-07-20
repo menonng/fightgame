@@ -6,7 +6,7 @@
 script = ExtResource("1")
 attack = 50.0
 hp = 1500.0
-range_px = 40.0
+range_px = 80.0
 move_speed = 240.0
 attack_speed = 0.8
 passive_cd = 100.0

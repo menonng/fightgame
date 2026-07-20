@@ -8,7 +8,7 @@ extends Resource
 @export var reset_at:   int = 16                     ## 초기화 타격 수
 
 @export_group("스택당 보너스")
-@export var bonus_range_per:    float = 25.0  ## 스택당 사거리 증가 (픽셀)
+@export var bonus_range_per:    float = 50.0  ## 스택당 사거리 증가 (픽셀)
 @export var bonus_atk_spd_per:  float = 0.15  ## 스택당 공속 증가 (회/s)
 @export var bonus_attack_per:   float = 5.0   ## 스택당 공격력 증가
 @export var bonus_proj_spd_per: float = 0.10  ## 스택당 투사체 속도 증가 비율

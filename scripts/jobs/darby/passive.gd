@@ -16,7 +16,7 @@ func _roll(player, scene, initial: bool) -> void:
 	var atk  := float(randi_range(
 		int(j.get("roll_attack_min",  5)),   int(j.get("roll_attack_max",  100))))
 	var rng  := float(randi_range(
-		int(j.get("roll_range_min",  10)),   int(j.get("roll_range_max",  100))))
+		int(j.get("roll_range_min",  20)),   int(j.get("roll_range_max",  200))))
 	var spd  := float(randi_range(
 		int(j.get("roll_speed_min", 100)),   int(j.get("roll_speed_max",  500))))
 	var asp  := randf_range(

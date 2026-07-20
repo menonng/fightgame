@@ -174,7 +174,7 @@ func setup(p_job: Dictionary, sx: int, sy: int, p_team: String, p_human: bool) -
 	last_valid_mouse_world = Vector2(rect.get_center()) + aim_dir
 	base_attack       = float(job.get("attack",       10.0))
 	base_speed        = float(job.get("move_speed",  200.0))
-	base_range        = float(job.get("range_px",     60.0))
+	base_range        = float(job.get("range_px",    120.0))
 	base_attack_speed = float(job.get("attack_speed",  1.0))
 	base_max_hp       = float(job.get("hp",         1000.0))
 	max_hp = base_max_hp; hp = max_hp
@@ -326,7 +326,7 @@ func start_basic_swing() -> void:
 const MeleeHitboxScript      := preload("res://scripts/melee_hitbox.gd")
 const RangedProjectileScript := preload("res://scripts/ranged_projectile.gd")
 
-const MELEE_RANGE_THRESHOLD := 70.0   ## 이 값 미만이면 근거리, 이상이면 원거리
+const MELEE_RANGE_THRESHOLD := 140.0  ## 이 값 미만이면 근거리, 이상이면 원거리
 const RANGED_PROJ_SPEED     := 640.0  ## 원거리 발사체 속도 (px/s)
 const RANGED_CAST_LOCK      := 0.08   ## 원거리 캐스팅~발사 순간까지의 짧은 이동 잠금 (초)
 
@@ -431,7 +431,7 @@ func respawn(sx: int, sy: int) -> void:
 
 func _roll_darby_stats_on_respawn() -> void:
 	var atk := float(randi_range(5, 100)); var hp_v := float(randi_range(300, 1000))
-	var rng := float(randi_range(10, 100)); var spd := float(randi_range(100, 500))
+	var rng := float(randi_range(20, 200)); var spd := float(randi_range(100, 500))
 	var asp := randf_range(0.5, 2.5)
 	set_base_stats(atk, hp_v, rng, spd, asp)
 	if move_speed < 10.0: base_speed = 180.0; refresh_stats()

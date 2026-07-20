@@ -8,8 +8,8 @@ extends Resource
 @export var roll_attack_max:   int   = 100    ## 공격력 최댓값
 @export var roll_hp_min:       int   = 300    ## 체력 최솟값
 @export var roll_hp_max:       int   = 1000   ## 체력 최댓값
-@export var roll_range_min:    int   = 10     ## 사거리 최솟값 (픽셀)
-@export var roll_range_max:    int   = 100    ## 사거리 최댓값 (픽셀)
+@export var roll_range_min:    int   = 20     ## 사거리 최솟값 (픽셀)
+@export var roll_range_max:    int   = 200    ## 사거리 최댓값 (픽셀)
 @export var roll_speed_min:    int   = 100    ## 이동속도 최솟값 (px/s)
 @export var roll_speed_max:    int   = 500    ## 이동속도 최댓값 (px/s)
 @export var roll_atk_spd_min:  float = 0.5   ## 공격속도 최솟값 (회/s)
