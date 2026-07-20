@@ -226,7 +226,13 @@ func _make_pixel_grass_tile(seed_val: int) -> ImageTexture:
 	var blade_hi: Color     = Color(0.337, 0.427, 0.251)
 	var fleck: Color         = Color(0.157, 0.122, 0.082)
 	var clover: Color         = Color(0.235, 0.400, 0.220)
-	var flower: Color         = Color(0.933, 0.867, 0.361)
+	var pebble: Color         = Color(0.322, 0.290, 0.243)
+	var pebble_hi: Color      = Color(0.416, 0.376, 0.310)
+	var leaf_warm: Color      = Color(0.667, 0.427, 0.180)
+	var leaf_warm2: Color     = Color(0.784, 0.549, 0.216)
+	var flower_colors: Array = [
+		Color(0.933, 0.867, 0.361), Color(0.855, 0.400, 0.545),
+		Color(0.702, 0.549, 0.867), Color(0.980, 0.980, 0.969)]
 	var cells: Array = []
 	cells.resize(grid * grid)
 	for i in range(cells.size()): cells[i] = base
@@ -247,8 +253,30 @@ func _make_pixel_grass_tile(seed_val: int) -> ImageTexture:
 		cells[rng.randi_range(0, grid - 1) * grid + rng.randi_range(0, grid - 1)] = fleck
 	for i in range(3):
 		cells[rng.randi_range(0, grid - 1) * grid + rng.randi_range(0, grid - 1)] = clover
-	for i in range(2):
-		cells[rng.randi_range(0, grid - 1) * grid + rng.randi_range(0, grid - 1)] = flower
+	# 자갈 무리 — 잔돌 2~3개가 뭉친 작은 클러스터 (참고 이미지의 바닥 잔돌 질감)
+	for i in range(4):
+		var pcx: int = rng.randi_range(0, grid - 1)
+		var pcy: int = rng.randi_range(0, grid - 1)
+		var pn: int = rng.randi_range(2, 3)
+		for j in range(pn):
+			var ppx: int = ((pcx + rng.randi_range(-1, 1)) % grid + grid) % grid
+			var ppy: int = ((pcy + rng.randi_range(-1, 1)) % grid + grid) % grid
+			cells[ppy * grid + ppx] = pebble_hi if j == 0 else pebble
+	# 낙엽 포인트 — 잔디잎과 다른 따뜻한 색조로 색상 다양성을 더한다
+	for i in range(4):
+		var lgx: int = rng.randi_range(0, grid - 1)
+		var lgy: int = rng.randi_range(0, grid - 1)
+		cells[lgy * grid + lgx] = leaf_warm if rng.randi_range(0, 1) == 0 else leaf_warm2
+	# 들꽃 군집 — 단일 픽셀이 아닌 2~3픽셀이 모인 작은 꽃무리, 색을 다양화
+	for i in range(4):
+		var fcx: int = rng.randi_range(0, grid - 1)
+		var fcy: int = rng.randi_range(0, grid - 1)
+		var fcol: Color = flower_colors[rng.randi_range(0, flower_colors.size() - 1)]
+		var fn: int = rng.randi_range(2, 3)
+		for j in range(fn):
+			var ffx: int = ((fcx + rng.randi_range(-1, 1)) % grid + grid) % grid
+			var ffy: int = ((fcy + rng.randi_range(-1, 1)) % grid + grid) % grid
+			cells[ffy * grid + ffx] = fcol
 	return _blit_logical_grid(cells, grid, px)
 
 ## 경계벽 — 어긋난 줄의 사각 블록마다 연속적인(이진 선택이 아닌) 톤 편차 + 2단계 베벨
@@ -298,6 +326,40 @@ func _make_pixel_stone_wall_tile(base: Color, mortar: Color, highlight: Color, s
 					for sy in range(px):
 						for sx in range(px):
 							img.set_pixel(ix * px + sx, iy * px + sy, c)
+	# 이끼 — 축축한 모서리·틈에 낀 이끼를 벽돌/모르타르 경계 위에 덧칠(블렌드)해
+	# "이끼 낀 돌" 느낌을 낸다. 벽돌 결을 완전히 덮지 않도록 기존 색과 섞는다.
+	var moss: Color      = Color(0.325, 0.478, 0.243)
+	var moss_dark: Color = Color(0.220, 0.353, 0.161)
+	for i in range(9):
+		var mcx: int = rng.randi_range(0, cols * brick_w - 1)
+		var mcy: int = rng.randi_range(0, rows * brick_h - 1)
+		var mr: int = rng.randi_range(1, 2)
+		var mcol: Color = moss if rng.randi_range(0, 2) > 0 else moss_dark
+		for dy in range(-mr, mr + 1):
+			for dx in range(-mr, mr + 1):
+				if dx * dx + dy * dy > mr * mr + 1: continue
+				var mix: int = mcx + dx; var miy: int = mcy + dy
+				if mix < 0 or mix >= cols * brick_w or miy < 0 or miy >= rows * brick_h: continue
+				for sy in range(px):
+					for sx in range(px):
+						var fx: int = mix * px + sx; var fy: int = miy * px + sy
+						var under: Color = img.get_pixel(fx, fy)
+						img.set_pixel(fx, fy, under.lerp(mcol, 0.7))
+	# 균열 — 일부 벽돌에 가느다란 대각선 금을 그어 풍화된 석재 느낌을 더한다.
+	var crack: Color = base.darkened(0.6)
+	for i in range(4):
+		var crow: int = rng.randi_range(0, rows - 1)
+		var ccol: int = rng.randi_range(0, cols - 1)
+		var coffset: int = (brick_w / 2) if crow % 2 == 1 else 0
+		var cbx: int = ccol * brick_w + coffset
+		var cby: int = crow * brick_h
+		var clen: int = rng.randi_range(3, brick_h - 2)
+		for s in range(clen):
+			var ccx: int = cbx + 2 + (s % 3); var ccy: int = cby + 1 + s
+			if ccx < 0 or ccx >= cols * brick_w or ccy < 0 or ccy >= rows * brick_h: continue
+			for sy in range(px):
+				for sx in range(px):
+					img.set_pixel(ccx * px + sx, ccy * px + sy, crack)
 	return ImageTexture.create_from_image(img)
 
 ## 수풀 — 방사형 그라데이션 잎 뭉치를 여러 겹 쌓아 볼록한 입체감을 내고, 뭉치 사이 그림자
@@ -316,6 +378,8 @@ func _make_pixel_leaf_bush_tile(seed_val: int) -> ImageTexture:
 	var edge: Color            = Color(0.098, 0.204, 0.090, 0.96)
 	var berry: Color            = Color(0.780, 0.235, 0.271, 0.95)
 	var flower: Color            = Color(0.973, 0.949, 0.847, 0.92)
+	var flower_violet: Color      = Color(0.671, 0.522, 0.867, 0.92)
+	var dew: Color                 = Color(0.878, 0.965, 0.929, 0.85)
 	var cells: Array = []
 	cells.resize(grid * grid)
 	for i in range(cells.size()): cells[i] = clump_a
@@ -334,6 +398,10 @@ func _make_pixel_leaf_bush_tile(seed_val: int) -> ImageTexture:
 		cells[rng.randi_range(0, grid - 1) * grid + rng.randi_range(0, grid - 1)] = berry
 	for i in range(2):
 		cells[rng.randi_range(0, grid - 1) * grid + rng.randi_range(0, grid - 1)] = flower
+	for i in range(2):
+		cells[rng.randi_range(0, grid - 1) * grid + rng.randi_range(0, grid - 1)] = flower_violet
+	for i in range(3):
+		cells[rng.randi_range(0, grid - 1) * grid + rng.randi_range(0, grid - 1)] = dew
 	return _blit_logical_grid(cells, grid, px)
 
 # ── 피해 헬퍼 ─────────────────────────────────────────────────────────────────
