@@ -183,6 +183,22 @@ func _stamp_blob_wrapped(cells: Array, grid: int, cx: int, cy: int, radius: int,
 				var gy: int = ((cy + dy) % grid + grid) % grid
 				cells[gy * grid + gx] = color
 
+## _stamp_blob_wrapped와 동일하지만 얼룩 중심(core_color)에서 가장자리(edge_color)로
+## 갈수록 색이 서서히 어두워지는 방사형 그라데이션을 입혀, 뭉치 하나하나가 볼록한
+## 입체(돔) 형태로 보이게 한다 — 평면적인 단색 얼룩보다 훨씬 "빛과 그림자"가 또렷하다.
+func _stamp_blob_wrapped_gradient(cells: Array, grid: int, cx: int, cy: int, radius: int,
+		core_color: Color, edge_color: Color, rng: RandomNumberGenerator) -> void:
+	for dy in range(-radius - 1, radius + 2):
+		for dx in range(-radius - 1, radius + 2):
+			var d: float   = sqrt(float(dx * dx + dy * dy))
+			var wob: float = float(radius) + rng.randf_range(-0.9, 0.9)
+			if d <= wob:
+				var t: float = clampf(d / max(0.001, wob), 0.0, 1.0)
+				var col: Color = core_color.lerp(edge_color, t)
+				var gx: int = ((cx + dx) % grid + grid) % grid
+				var gy: int = ((cy + dy) % grid + grid) % grid
+				cells[gy * grid + gx] = col
+
 ## grid×grid 논리 픽셀 배열을 px배 확대해 실제 이미지로 굽는다.
 func _blit_logical_grid(cells: Array, grid: int, px: int) -> ImageTexture:
 	var img := Image.create_empty(grid * px, grid * px, false, Image.FORMAT_RGBA8)
@@ -194,39 +210,50 @@ func _blit_logical_grid(cells: Array, grid: int, px: int) -> ImageTexture:
 					img.set_pixel(gx * px + pxi, gy * px + py, c)
 	return ImageTexture.create_from_image(img)
 
-## 잔디 바닥 — 넓은 밝기 차 패치 뭉치 위에 낱개 잔디잎 스프라이트(위로 뾰족한 2픽셀)와
-## 드문 흙 알갱이를 얹어 "손으로 칠한" 질감 + 또렷한 디테일을 동시에 낸다.
+## 잔디 바닥 — 방사형 그라데이션 패치 뭉치(볼록한 입체감) 위에 밝은/어두운 두 톤의 잔디잎,
+## 클로버·들꽃 포인트 컬러, 드문 흙 알갱이를 얹어 코어키퍼 식의 "손으로 칠한" 질감을 낸다.
 func _make_pixel_grass_tile(seed_val: int) -> ImageTexture:
 	var grid := 24
 	var px := 3
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_val
-	var base: Color  = Color(0.129, 0.161, 0.106)
-	var mid: Color   = Color(0.161, 0.196, 0.129)
-	var deep: Color  = Color(0.098, 0.122, 0.082)
-	var blade: Color = Color(0.243, 0.314, 0.180)
-	var fleck: Color = Color(0.145, 0.114, 0.078)
+	var base: Color      = Color(0.129, 0.161, 0.106)
+	var mid: Color        = Color(0.180, 0.220, 0.145)
+	var mid_edge: Color   = Color(0.145, 0.180, 0.118)
+	var deep: Color        = Color(0.086, 0.110, 0.074)
+	var deep_edge: Color   = Color(0.067, 0.086, 0.059)
+	var blade: Color        = Color(0.267, 0.345, 0.196)
+	var blade_hi: Color     = Color(0.337, 0.427, 0.251)
+	var fleck: Color         = Color(0.157, 0.122, 0.082)
+	var clover: Color         = Color(0.235, 0.400, 0.220)
+	var flower: Color         = Color(0.933, 0.867, 0.361)
 	var cells: Array = []
 	cells.resize(grid * grid)
 	for i in range(cells.size()): cells[i] = base
-	for i in range(7):
-		_stamp_blob_wrapped(cells, grid, rng.randi_range(0, grid - 1), rng.randi_range(0, grid - 1),
-			rng.randi_range(2, 4), mid, rng)
+	for i in range(8):
+		_stamp_blob_wrapped_gradient(cells, grid, rng.randi_range(0, grid - 1), rng.randi_range(0, grid - 1),
+			rng.randi_range(2, 4), mid, mid_edge, rng)
 	for i in range(4):
-		_stamp_blob_wrapped(cells, grid, rng.randi_range(0, grid - 1), rng.randi_range(0, grid - 1),
-			rng.randi_range(1, 3), deep, rng)
-	for i in range(14):
+		_stamp_blob_wrapped_gradient(cells, grid, rng.randi_range(0, grid - 1), rng.randi_range(0, grid - 1),
+			rng.randi_range(1, 3), deep, deep_edge, rng)
+	for i in range(16):
 		var gx: int = rng.randi_range(0, grid - 1)
 		var gy: int = rng.randi_range(0, grid - 1)
-		cells[gy * grid + gx] = blade
+		var bc: Color = blade_hi if rng.randi_range(0, 2) == 0 else blade
+		cells[gy * grid + gx] = bc
 		var gy2: int = ((gy - 1) % grid + grid) % grid
-		cells[gy2 * grid + gx] = blade
-	for i in range(6):
+		cells[gy2 * grid + gx] = bc
+	for i in range(5):
 		cells[rng.randi_range(0, grid - 1) * grid + rng.randi_range(0, grid - 1)] = fleck
+	for i in range(3):
+		cells[rng.randi_range(0, grid - 1) * grid + rng.randi_range(0, grid - 1)] = clover
+	for i in range(2):
+		cells[rng.randi_range(0, grid - 1) * grid + rng.randi_range(0, grid - 1)] = flower
 	return _blit_logical_grid(cells, grid, px)
 
-## 경계벽 — 어긋난 줄의 사각 블록마다 위/왼쪽은 밝게, 아래/오른쪽은 어둡게 베벨을 넣어
-## 평면이 아니라 돌출된 석재 블록처럼 보이게 하고, 드문 패임(pit)으로 마감한다.
+## 경계벽 — 어긋난 줄의 사각 블록마다 연속적인(이진 선택이 아닌) 톤 편차 + 2단계 베벨
+## 그라데이션(모서리 강한 하이라이트/그림자 → 중간 톤으로 부드럽게 전이)을 넣어 돌출된
+## 석재 블록의 입체감을 내고, 드문 광물 알갱이·패임(pit)으로 마감해 밴딩을 없앤다.
 func _make_pixel_stone_wall_tile(base: Color, mortar: Color, highlight: Color, seed_val: int) -> ImageTexture:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_val
@@ -235,8 +262,11 @@ func _make_pixel_stone_wall_tile(base: Color, mortar: Color, highlight: Color, s
 	var px := 4
 	var rows := 4
 	var cols := 6
-	var shadow: Color = base.darkened(0.45)
-	var pit: Color     = base.darkened(0.25)
+	var shadow: Color   = base.darkened(0.45)
+	var shadow2: Color  = base.darkened(0.22)
+	var hi2: Color        = highlight.lerp(base, 0.35)
+	var pit: Color         = base.darkened(0.25)
+	var mineral: Color     = Color(0.302, 0.353, 0.400)
 	var img := Image.create_empty(cols * brick_w * px, rows * brick_h * px, false, Image.FORMAT_RGBA8)
 	img.fill(mortar)
 	for row in range(rows):
@@ -244,16 +274,25 @@ func _make_pixel_stone_wall_tile(base: Color, mortar: Color, highlight: Color, s
 		for col in range(-1, cols + 1):
 			var bx := col * brick_w + offset
 			var by := row * brick_h
-			var tint: Color = base if rng.randi_range(0, 3) > 0 else highlight.lerp(base, 0.3)
+			var tint: Color = base.lerp(highlight, rng.randf_range(0.0, 0.4))
+			if rng.randi_range(0, 9) == 0: tint = tint.lerp(mineral, 0.5)
 			for py in range(1, brick_h - 1):
 				for pxi in range(1, brick_w - 1):
 					var ix := bx + pxi; var iy := by + py
 					if ix < 0 or ix >= cols * brick_w or iy < 0 or iy >= rows * brick_h: continue
 					var c: Color = tint
-					if py == 1 or pxi == 1:
+					if py == 1 and pxi == 1:
+						c = hi2
+					elif py == 1 or pxi == 1:
 						c = highlight
+					elif py == brick_h - 2 and pxi == brick_w - 2:
+						c = shadow2
 					elif py == brick_h - 2 or pxi == brick_w - 2:
 						c = shadow
+					elif py == 2 or pxi == 2:
+						c = tint.lerp(highlight, 0.35)
+					elif py == brick_h - 3 or pxi == brick_w - 3:
+						c = tint.lerp(shadow, 0.35)
 					elif rng.randi_range(0, 11) == 0:
 						c = pit
 					for sy in range(px):
@@ -261,32 +300,40 @@ func _make_pixel_stone_wall_tile(base: Color, mortar: Color, highlight: Color, s
 							img.set_pixel(ix * px + sx, iy * px + sy, c)
 	return ImageTexture.create_from_image(img)
 
-## 수풀 — 큰 잎 뭉치 위에 더 작고 밝은 뭉치를 겹쳐 입체감을 내고, 뭉치 사이 그림자 틈과
-## 햇빛 반짝임(dapple) 낱개 픽셀로 마무리한다.
+## 수풀 — 방사형 그라데이션 잎 뭉치를 여러 겹 쌓아 볼록한 입체감을 내고, 뭉치 사이 그림자
+## 틈, 햇빛 반짝임(dapple), 열매·꽃 포인트 컬러로 마무리해 색상 다양성을 더한다.
 func _make_pixel_leaf_bush_tile(seed_val: int) -> ImageTexture:
 	var grid := 24
 	var px := 3
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_val
-	var clump_a: Color = Color(0.220, 0.450, 0.200, 0.88)
-	var clump_b: Color = Color(0.278, 0.529, 0.243, 0.88)
-	var deep: Color     = Color(0.145, 0.302, 0.133, 0.94)
-	var dapple: Color   = Color(0.420, 0.670, 0.330, 0.92)
-	var edge: Color      = Color(0.106, 0.220, 0.098, 0.96)
+	var clump_a: Color    = Color(0.220, 0.450, 0.200, 0.88)
+	var clump_b: Color     = Color(0.298, 0.557, 0.259, 0.88)
+	var clump_b_e: Color   = Color(0.235, 0.463, 0.208, 0.90)
+	var deep: Color          = Color(0.129, 0.271, 0.118, 0.94)
+	var deep_e: Color        = Color(0.098, 0.216, 0.090, 0.95)
+	var dapple: Color         = Color(0.463, 0.706, 0.353, 0.94)
+	var edge: Color            = Color(0.098, 0.204, 0.090, 0.96)
+	var berry: Color            = Color(0.780, 0.235, 0.271, 0.95)
+	var flower: Color            = Color(0.973, 0.949, 0.847, 0.92)
 	var cells: Array = []
 	cells.resize(grid * grid)
 	for i in range(cells.size()): cells[i] = clump_a
-	for i in range(6):
-		_stamp_blob_wrapped(cells, grid, rng.randi_range(0, grid - 1), rng.randi_range(0, grid - 1),
-			rng.randi_range(3, 5), clump_b, rng)
+	for i in range(7):
+		_stamp_blob_wrapped_gradient(cells, grid, rng.randi_range(0, grid - 1), rng.randi_range(0, grid - 1),
+			rng.randi_range(3, 5), clump_b, clump_b_e, rng)
 	for i in range(5):
-		_stamp_blob_wrapped(cells, grid, rng.randi_range(0, grid - 1), rng.randi_range(0, grid - 1),
-			rng.randi_range(1, 3), deep, rng)
+		_stamp_blob_wrapped_gradient(cells, grid, rng.randi_range(0, grid - 1), rng.randi_range(0, grid - 1),
+			rng.randi_range(1, 3), deep, deep_e, rng)
 	for i in range(5):
 		_stamp_blob_wrapped(cells, grid, rng.randi_range(0, grid - 1), rng.randi_range(0, grid - 1),
 			1, edge, rng)
 	for i in range(10):
 		cells[rng.randi_range(0, grid - 1) * grid + rng.randi_range(0, grid - 1)] = dapple
+	for i in range(3):
+		cells[rng.randi_range(0, grid - 1) * grid + rng.randi_range(0, grid - 1)] = berry
+	for i in range(2):
+		cells[rng.randi_range(0, grid - 1) * grid + rng.randi_range(0, grid - 1)] = flower
 	return _blit_logical_grid(cells, grid, px)
 
 # ── 피해 헬퍼 ─────────────────────────────────────────────────────────────────

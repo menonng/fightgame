@@ -25,6 +25,13 @@ var prev_rect := Rect2i(0, 0, 40, 60)
 const SPR_W := 60
 const SPR_H := 90
 
+# ── 다비 근접무기(고양이) 절차적 픽셀 아트 — 맵 타일과 같은 "칠해진 얼룩 + 베벨" 톤을
+# 유지하기 위해 낱장 이미지 대신 코드로 굽는다. 손잡이(꼬리) 쪽 격자 좌표를 앵커로 잡아
+# 그 지점이 항상 피벗(캐릭터 손 위치)에 오도록 그린다 — 몸통을 손 쪽에, 얼굴을 반대쪽에
+# 두는 배치는 그대로 유지한다.
+const CAT_PX := 3
+const CAT_ANCHOR_CELL := Vector2(12.0, 22.0)
+
 # ── 기저 스탯
 var base_attack: float       = 0.0
 var base_speed: float        = 0.0
@@ -207,6 +214,7 @@ var _move_frac: Vector2 = Vector2.ZERO   ## move_and_collide_map의 프레임 �
 # ── 텍스처
 var _tex_body: ImageTexture   = null
 var _tex_body_e: ImageTexture = null
+var _tex_cat_weapon: ImageTexture = null   ## 다비 근접무기(고양이) 절차적 픽셀 아트, 최초 사용 시 1회 생성
 var _tex_wind_q_fancy: ImageTexture  = null
 var _tex_wind_q_simple: ImageTexture = null
 var _tex_wind_r_arrow: ImageTexture  = null
@@ -772,13 +780,16 @@ func _draw() -> void:
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 	# Darby 고양이 (근접 냥냥펀치 모드 — 현재 사거리가 근접 기준일 때만 착용 표시)
+	# 피벗 x좌표 자체가 facing(±1)에 비례해 좌우로 이동하고, 반전도 facing 부호로 걸리므로
+	# 캐릭터가 동/서 중 어느 쪽을 보든 고양이가 항상 그 방향 쪽으로 옮겨가 들린다.
 	if jk == "darby" and attack_range < MELEE_RANGE_THRESHOLD:
+		if _tex_cat_weapon == null: _build_cat_weapon_tex()
 		var ctr := Vector2(visual_spr_rect.get_center()); var top := visual_spr_rect.position.y
-		var cx := 12.0; var cy := 40.0
 		var pivot := Vector2(ctr.x + float(facing) * 20.0, top + 24.0)
 		var angle := (18.0 + basic_swing_angle) if facing >= 0 else (-18.0 - basic_swing_angle)
+		var anchor_px := CAT_ANCHOR_CELL * float(CAT_PX)
 		draw_set_transform(pivot, deg_to_rad(angle), Vector2(float(facing), 1.0))
-		_draw_cat_shape(cx, cy)
+		draw_texture(_tex_cat_weapon, -anchor_px)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 	# Shoveler 삽
@@ -880,40 +891,133 @@ func _draw_bow_shape(bw: float, bh: float) -> void:
 	draw_line(Vector2(ox+20.0,oy+4.0), Vector2(mcx,mcy), sc, 1.0)
 	draw_line(Vector2(ox+20.0,oy+14.0),Vector2(mcx,mcy), sc, 1.0)
 
-## 다비 근접 무기 — 냥냥펀치용 고양이. 목덜미를 잡고 몽둥이처럼 휘두르는 모양새(꼬리쪽이 손잡이).
-func _draw_cat_shape(cx: float, cy: float) -> void:
-	var ox := -cx; var oy := -cy
-	var fur := Color(0.906, 0.706, 0.373); var fur_dark := Color(0.706, 0.510, 0.235)
-	var ink := Color(0.106, 0.106, 0.122)
-	# 꼬리 (손잡이 역할)
-	draw_line(Vector2(ox+cx+7.0, oy+56.0), Vector2(ox+cx+15.0, oy+74.0), fur_dark, 4.0)
-	# 몸통
-	draw_set_transform(Vector2(ox+cx, oy+48.0), 0.0, Vector2(1.0, 1.35))
-	draw_circle(Vector2.ZERO, 11.0, fur)
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	# 머리
-	draw_circle(Vector2(ox+cx, oy+18.0), 11.0, fur)
-	var ear_l := PackedVector2Array([Vector2(ox+cx-9.0,oy+11.0),Vector2(ox+cx-3.0,oy+11.0),Vector2(ox+cx-7.0,oy+1.0)])
-	var ear_r := PackedVector2Array([Vector2(ox+cx+3.0,oy+11.0),Vector2(ox+cx+9.0,oy+11.0),Vector2(ox+cx+7.0,oy+1.0)])
-	draw_colored_polygon(ear_l, fur_dark)
-	draw_colored_polygon(ear_r, fur_dark)
-	draw_circle(Vector2(ox+cx-4.0, oy+18.0), 1.6, ink)
-	draw_circle(Vector2(ox+cx+4.0, oy+18.0), 1.6, ink)
-	# 앞발 (앞으로 뻗은 펀치 포즈)
-	draw_circle(Vector2(ox+cx-9.0, oy+34.0), 4.0, fur)
-	draw_circle(Vector2(ox+cx+9.0, oy+34.0), 4.0, fur)
-
-## 쇼블러 근접 무기 — 삽
+## 쇼블러 근접 무기 — 삽. 상하반전 배치: 삽날이 피벗(캐릭터 손) 쪽에 오고
+## 자루/D자 손잡이가 바깥쪽으로 뻗는다 (기존엔 자루가 손 쪽, 삽날이 바깥쪽이었다).
 func _draw_shovel_shape(cx: float, cy: float) -> void:
 	var ox := -cx; var oy := -cy
 	var wood := Color(0.471, 0.353, 0.157); var steel := Color(0.706, 0.706, 0.745); var steel_dark := Color(0.471, 0.471, 0.510)
-	# 자루
-	draw_rect(Rect2(ox+cx-3.0, oy+8.0, 6.0, 50.0), wood)
-	# D자형 손잡이
-	draw_arc(Vector2(ox+cx, oy+8.0), 7.0, PI, TAU, 12, wood, 3.0)
-	# 삽날
+	# 삽날 (피벗 쪽, 안쪽)
 	var blade := PackedVector2Array([
-		Vector2(ox+cx-10.0, oy+56.0), Vector2(ox+cx+10.0, oy+56.0),
-		Vector2(ox+cx+8.0, oy+76.0), Vector2(ox+cx-8.0, oy+76.0)])
+		Vector2(ox+cx-8.0, oy+8.0), Vector2(ox+cx+8.0, oy+8.0),
+		Vector2(ox+cx+10.0, oy+28.0), Vector2(ox+cx-10.0, oy+28.0)])
 	draw_colored_polygon(blade, steel)
-	draw_rect(Rect2(ox+cx-11.0, oy+54.0, 22.0, 5.0), steel_dark)
+	draw_rect(Rect2(ox+cx-11.0, oy+25.0, 22.0, 5.0), steel_dark)
+	# 자루 (바깥쪽으로 뻗음)
+	draw_rect(Rect2(ox+cx-3.0, oy+26.0, 6.0, 50.0), wood)
+	# D자형 손잡이 (자루 끝, 가장 바깥쪽)
+	draw_arc(Vector2(ox+cx, oy+76.0), 7.0, PI, TAU, 12, wood, 3.0)
+
+# ── 다비 근접무기(고양이) 절차적 픽셀 아트 ──────────────────────────────────────
+## grid×grid 논리 격자에 타원을 채운다 (기존 셀 값과 무관하게 덮어씀).
+func _fill_ellipse_cells(cells: Array, gw: int, gh: int, ecx: float, ecy: float,
+		rx: float, ry: float, color: Color) -> void:
+	var y0: int = int(floor(ecy - ry)); var y1: int = int(ceil(ecy + ry))
+	var x0: int = int(floor(ecx - rx)); var x1: int = int(ceil(ecx + rx))
+	for gy in range(max(0, y0), min(gh, y1 + 1)):
+		for gx in range(max(0, x0), min(gw, x1 + 1)):
+			var nx: float = (float(gx) + 0.5 - ecx) / rx
+			var ny: float = (float(gy) + 0.5 - ecy) / ry
+			if nx * nx + ny * ny <= 1.0:
+				cells[gy * gw + gx] = color
+
+## 이미 채워진 셀 위에만 덮어쓴다 — 실루엣 밖으로 번지지 않는 음영/하이라이트용.
+func _fill_ellipse_cells_masked(cells: Array, gw: int, gh: int, ecx: float, ecy: float,
+		rx: float, ry: float, color: Color) -> void:
+	var y0: int = int(floor(ecy - ry)); var y1: int = int(ceil(ecy + ry))
+	var x0: int = int(floor(ecx - rx)); var x1: int = int(ceil(ecx + rx))
+	for gy in range(max(0, y0), min(gh, y1 + 1)):
+		for gx in range(max(0, x0), min(gw, x1 + 1)):
+			var idx: int = gy * gw + gx
+			if cells[idx] == null: continue
+			var nx: float = (float(gx) + 0.5 - ecx) / rx
+			var ny: float = (float(gy) + 0.5 - ecy) / ry
+			if nx * nx + ny * ny <= 1.0:
+				cells[idx] = color
+
+## 실루엣 바깥 테두리(8방향 인접) 1픽셀을 외곽선 색으로 채워 가독성을 준다.
+func _outline_sprite_grid(cells: Array, gw: int, gh: int, outline_color: Color) -> void:
+	var to_outline: Array = []
+	for gy in range(gh):
+		for gx in range(gw):
+			var idx: int = gy * gw + gx
+			if cells[idx] != null: continue
+			var touches := false
+			for dy in range(-1, 2):
+				for dx in range(-1, 2):
+					var nx: int = gx + dx; var ny: int = gy + dy
+					if nx >= 0 and nx < gw and ny >= 0 and ny < gh and cells[ny * gw + nx] != null:
+						touches = true; break
+				if touches: break
+			if touches: to_outline.append(idx)
+	for idx in to_outline:
+		cells[idx] = outline_color
+
+## 논리 격자를 px배 확대해 실제(투명 배경 유지) 이미지로 굽는다.
+func _blit_sprite_grid(cells: Array, gw: int, gh: int, px: int) -> ImageTexture:
+	var img := Image.create_empty(gw * px, gh * px, false, Image.FORMAT_RGBA8)
+	for gy in range(gh):
+		for gx in range(gw):
+			var c = cells[gy * gw + gx]
+			if c == null: continue
+			for py in range(px):
+				for pxi in range(px):
+					img.set_pixel(gx * px + pxi, gy * px + py, c)
+	return ImageTexture.create_from_image(img)
+
+## 다비 근접 무기 — 냥냥펀치용 고양이. 목덜미(꼬리) 쪽을 손잡이로 잡고 휘두르는 모양새.
+## 좌상단 광원 기준 하이라이트/그림자를 얹어 맵 벽·부쉬와 같은 톤의 입체감을 낸다.
+func _build_cat_weapon_tex() -> void:
+	var gw := 24; var gh := 32
+	var cells: Array = []
+	cells.resize(gw * gh)
+	for i in range(cells.size()): cells[i] = null
+
+	var fur: Color        = Color(0.851, 0.580, 0.290)
+	var fur_light: Color  = Color(0.949, 0.780, 0.482)
+	var fur_dark: Color   = Color(0.647, 0.400, 0.161)
+	var cream: Color      = Color(0.961, 0.902, 0.780)
+	var ear_pink: Color   = Color(0.851, 0.451, 0.549)
+	var eye: Color         = Color(0.102, 0.180, 0.137)
+	var eye_glint: Color   = Color(0.918, 0.965, 0.941)
+	var nose: Color        = Color(0.761, 0.290, 0.353)
+	var strap: Color       = Color(0.353, 0.239, 0.129)
+	var strap_light: Color = Color(0.478, 0.333, 0.184)
+	var outline: Color     = Color(0.090, 0.067, 0.047)
+
+	# 실루엣 — 귀(바깥), 머리, 몸통, 앞발
+	_fill_ellipse_cells(cells, gw, gh, 8.0, 3.0, 2.6, 3.2, fur_dark)
+	_fill_ellipse_cells(cells, gw, gh, 16.0, 3.0, 2.6, 3.2, fur_dark)
+	_fill_ellipse_cells(cells, gw, gh, 12.0, 8.0, 6.4, 6.6, fur)
+	_fill_ellipse_cells(cells, gw, gh, 12.0, 18.0, 7.6, 7.2, fur)
+	_fill_ellipse_cells(cells, gw, gh, 5.2, 16.5, 2.3, 2.3, fur)
+	_fill_ellipse_cells(cells, gw, gh, 18.8, 16.5, 2.3, 2.3, fur)
+
+	# 그림자 (우하단) → 하이라이트 (좌상단) 순으로 덮어써 광원이 일관된 입체 음영을 만든다.
+	_fill_ellipse_cells_masked(cells, gw, gh, 14.5, 20.0, 6.0, 5.6, fur_dark)
+	_fill_ellipse_cells_masked(cells, gw, gh, 14.2, 9.5, 4.6, 4.6, fur_dark)
+	_fill_ellipse_cells_masked(cells, gw, gh, 9.8, 6.0, 3.6, 3.4, fur_light)
+	_fill_ellipse_cells_masked(cells, gw, gh, 9.6, 15.0, 4.4, 4.0, fur_light)
+
+	# 가슴/입가 크림색 패치 — 색상 다양성 + 얼굴 가독성
+	_fill_ellipse_cells_masked(cells, gw, gh, 12.0, 10.6, 3.0, 2.0, cream)
+
+	# 귀 안쪽 (음영 이후에 그려 항상 또렷한 분홍으로 남게)
+	_fill_ellipse_cells(cells, gw, gh, 8.0, 3.6, 1.3, 1.7, ear_pink)
+	_fill_ellipse_cells(cells, gw, gh, 16.0, 3.6, 1.3, 1.7, ear_pink)
+
+	# 꼬리(손잡이) — 몸통에서 이어져 말리며, 끝은 가죽끈 색으로 마감해 "잡는 부분"을 표시
+	_fill_ellipse_cells(cells, gw, gh, 14.5, 23.0, 2.6, 2.6, fur)
+	_fill_ellipse_cells(cells, gw, gh, 16.5, 26.0, 2.3, 2.3, fur_dark)
+	_fill_ellipse_cells(cells, gw, gh, 18.0, 28.5, 2.0, 2.0, strap)
+	_fill_ellipse_cells(cells, gw, gh, 19.0, 30.5, 1.6, 1.6, strap_light)
+
+	_outline_sprite_grid(cells, gw, gh, outline)
+
+	# 얼굴 디테일 — 외곽선 이후에 그려 항상 또렷하게 보이도록
+	_fill_ellipse_cells(cells, gw, gh, 9.6, 7.6, 0.9, 1.1, eye)
+	_fill_ellipse_cells(cells, gw, gh, 14.4, 7.6, 0.9, 1.1, eye)
+	_fill_ellipse_cells(cells, gw, gh, 9.9, 7.2, 0.35, 0.35, eye_glint)
+	_fill_ellipse_cells(cells, gw, gh, 14.7, 7.2, 0.35, 0.35, eye_glint)
+	_fill_ellipse_cells(cells, gw, gh, 12.0, 9.6, 0.9, 0.7, nose)
+
+	_tex_cat_weapon = _blit_sprite_grid(cells, gw, gh, CAT_PX)
