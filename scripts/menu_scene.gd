@@ -29,7 +29,7 @@ func _draw() -> void:
 		HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color(0.5,0.5,0.55))
 	# 직업 설명
 	var jk: String = JOB_KEYS[_job_idx]
-	var job := Global.JOBS.get(jk, {})
+	var job: Dictionary = Global.JOBS.get(jk, {})
 	var lines := ["  P: " + job.get("passive_name","") + " — " + job.get("passive_desc",""),
 				  "  Q: " + job.get("q_name","")       + " — " + job.get("q_desc",""),
 				  "  E: " + job.get("e_name","")       + " — " + job.get("e_desc",""),

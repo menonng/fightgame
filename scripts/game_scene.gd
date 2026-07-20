@@ -91,7 +91,7 @@ func _ready() -> void:
 	player.name = "Player"
 	player.set_script(PlayerScript)
 	add_child(player)
-	var job := Global.JOBS.get(Global.selected_job, Global.JOBS["swordsman"])
+	var job: Dictionary = Global.JOBS.get(Global.selected_job, Global.JOBS["swordsman"])
 	player.setup(job, 160, WORLD_H - 80 - 60, "blue", true)
 	player.scene_ref = self
 	player.basic_attack_hit.connect(_on_player_basic_attack_hit)
@@ -639,7 +639,7 @@ func _draw_hud() -> void:
 		var sname: String = (names[i] as String).left(6)
 		_hud.draw_string(_font, Vector2(ix + 3.0, iy + sz - 5.0), sname,
 			HORIZONTAL_ALIGNMENT_LEFT, int(sz) - 4, 10, Color(0.75, 0.82, 1.0, 0.8))
-		var cd := cds[i]; var rem := rems[i]
+		var cd: float = cds[i]; var rem: float = rems[i]
 		if cd > 0.0 and rem > 0.0:
 			_draw_radial_cd(ix, iy, sz, minf(1.0, rem / cd))
 			_hud.draw_string(_font, Vector2(ix + sz/2.0 - 12.0, iy + sz/2.0 + 8.0),
