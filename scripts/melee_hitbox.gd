@@ -43,7 +43,9 @@ func _on_area_entered(area: Area2D) -> void:
 	hit_target.emit(target)
 
 func _draw() -> void:
-	# 검격 궤적 — 간단한 반투명 부채꼴로 스윙 방향을 표시 (임시 그래픽)
+	# 판정 범위 시각화 — 연습 모드 전용. 멀티플레이에서는 상대에게 정확한 히트박스를
+	# 노출하지 않도록 아무것도 그리지 않는다 (실제 검격 연출은 player.gd가 별도로 그림).
+	if not Global.is_practice_mode: return
 	var length: float = 0.0
 	for c in get_children():
 		if c is CollisionShape2D and c.shape is RectangleShape2D:

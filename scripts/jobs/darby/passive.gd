@@ -8,9 +8,9 @@ func update(player, dt: float, scene) -> void:
 	player._darby_passive_timer -= dt
 	if player._darby_passive_timer <= 0.0:
 		player._darby_passive_timer = float(player.job.get("passive_cd", 10.0))
-		_roll(player, scene, false)
+		_roll(player, scene)
 
-func _roll(player, scene, initial: bool) -> void:
+func _roll(player, scene) -> void:
 	var j: Dictionary = player.job
 
 	var atk  := float(randi_range(
@@ -42,9 +42,11 @@ func _roll(player, scene, initial: bool) -> void:
 		player.base_speed = floor_spd
 		player.refresh_stats()
 
-	if not initial and scene != null:
+	# 게임 시작 시(initial=true)에도 재발동과 동일하게 즉시 연출을 재생해 패시브가
+	# 즉발했다는 것을 시각적으로 알려준다.
+	if scene != null:
 		scene._darby_spawn_rise_fx(player)
 
 func initial_roll(player, scene) -> void:
 	player._darby_passive_timer = float(player.job.get("passive_cd", 10.0))
-	_roll(player, scene, true)
+	_roll(player, scene)

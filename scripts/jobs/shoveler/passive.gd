@@ -40,11 +40,11 @@ func try_add_stack(owner, target, by_dust: bool, trigger_bury: bool) -> void:
 
 	if target.is_buried():
 		return
-	if float(target.get("shovel_immunity_time", 0.0)) > 0.0 and not trigger_bury:
+	if float(target.shovel_immunity_time) > 0.0 and not trigger_bury:
 		return
 
 	if by_dust:
-		if float(target.get("_shovel_dust_lock", 0.0)) > 0.0:
+		if float(target._shovel_dust_lock) > 0.0:
 			return
 		target._shovel_dust_lock = dust_lock_duration
 

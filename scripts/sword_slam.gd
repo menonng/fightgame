@@ -63,10 +63,12 @@ func _process(_delta: float) -> void:
 func _draw() -> void:
 	if not alive: return
 	if not _landed:
-		# 도약/하강 중 — 착지 지점에 경고 링 + 그림자(고정), 검은 visual_offset_y만큼 떠서 그려짐
-		var warn_t := clampf(1.0 - absf(visual_offset_y) / 40.0, 0.0, 1.0)
-		draw_circle(Vector2.ZERO, hit_radius * (0.35 + 0.35 * warn_t), Color(1.0, 0.3, 0.3, 0.25))
-		draw_arc(Vector2.ZERO, hit_radius, 0.0, TAU, 32, Color(1.0, 0.35, 0.35, 0.7), 3.0)
+		# 착지 예정 범위 경고 링 — 정확한 판정 반경을 드러내므로 연습 모드에서만 표시.
+		# 검 스프라이트 자체는 실제 스킬 연출이므로 모드와 무관하게 항상 그린다.
+		if Global.is_practice_mode:
+			var warn_t := clampf(1.0 - absf(visual_offset_y) / 40.0, 0.0, 1.0)
+			draw_circle(Vector2.ZERO, hit_radius * (0.35 + 0.35 * warn_t), Color(1.0, 0.3, 0.3, 0.25))
+			draw_arc(Vector2.ZERO, hit_radius, 0.0, TAU, 32, Color(1.0, 0.35, 0.35, 0.7), 3.0)
 		_draw_blade(Vector2(0.0, visual_offset_y))
 	else:
 		# 착지 충격파 — target_pos 고정 중심에서 확산하며 페이드

@@ -259,7 +259,11 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if not player.dead and not player.revive_active:
-			if _try_or_buffer("attack"): player.perform_basic_attack()
+			# 다비 Q 타겟팅 중이면 좌클릭이 공격이 아니라 확인(발동) 입력이 된다.
+			if targeting_active and player.job.get("key", "") == "darby":
+				_check_darby_q_confirm()
+			elif _try_or_buffer("attack"):
+				player.perform_basic_attack()
 
 	# 툴팁: 마우스 이동 or 버튼
 	if event is InputEventMouseMotion or event is InputEventMouseButton:
@@ -732,6 +736,10 @@ func _draw_hud() -> void:
 	if jk == "darby": hint += "  [Q: 1회 눌러 타겟팅, 재클릭으로 확인]"
 	_hud.draw_string(_font, Vector2(16.0,SCR_H-18.0), hint,
 		HORIZONTAL_ALIGNMENT_LEFT,-1,13,Color(0.5,0.5,0.55))
+
+	# 스킬 툴팁 — 스킬 아이콘 위에 마우스를 올렸을 때 (_update_tooltip이 상태를 갱신)
+	if _tooltip_visible:
+		_draw_tooltip(_tooltip_pos, _tooltip_lines)
 
 # ── HUD 보조 ─────────────────────────────────────────────────────────────────
 func _draw_radial_cd(ix: float, iy: float, sz: float, pct: float) -> void:

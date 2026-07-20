@@ -41,10 +41,10 @@ func update(player, dt: float) -> void:
 ## 접촉 훔치기
 func steal(player, target) -> void:
 	var has_stats: bool = target.has_method("apply_damage")
-	var t_atk := float(target.get("attack",       0.0)) if has_stats else 0.0
-	var t_hp  := float(target.get("max_hp",     100.0))
-	var t_spd := float(target.get("move_speed",   0.0)) if has_stats else 0.0
-	var t_as  := float(target.get("attack_speed", 0.0)) if has_stats else 0.0
+	var t_atk: float = float(target.attack)       if has_stats else 0.0
+	var t_hp: float  = float(target.max_hp)       if has_stats else 100.0
+	var t_spd: float = float(target.move_speed)   if has_stats else 0.0
+	var t_as: float  = float(target.attack_speed) if has_stats else 0.0
 
 	var sa := t_atk * steal_attack
 	var sh := t_hp  * steal_hp

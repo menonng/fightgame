@@ -131,8 +131,9 @@ func dummy_update(dt: float, map_solids: Array, map_bushes: Array = []) -> void:
 	queue_redraw()
 
 func _draw() -> void:
+	var buried_now := is_buried()
 	var buried_oy := 0.0
-	if is_buried(): buried_oy = rect.size.y * 0.6
+	if buried_now: buried_oy = rect.size.y * 0.9   ## 더 깊이 가라앉도록 상향 (기존 0.6)
 
 	# 착지 지점 가이드 (에어본/넉백 중)
 	var ab := airborne_status()
@@ -157,14 +158,26 @@ func _draw() -> void:
 			"-%d" % int(last_damage), HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color(1.0,0.784,0.471))
 	# Shovel 스택 점
 	var stk := shovel_stack_count()
-	if is_buried(): stk = 6
+	if buried_now: stk = 6
 	if stk > 0 and stk < 6:
 		for i in range(stk):
 			var col := Color(0.478,0.082,0.082) if stk >= 5 else Color(0.941,0.941,0.941)
 			draw_circle(Vector2(4.0 + i*10.0 + visual_offset.x, buried_oy + visual_offset.y - 10.0), 4.0, col)
 
-## Player와 동일한 착지 가이드 링
+	# 파묻힘 — 지면 아래로 가라앉은 부분을 흙으로 완전히 가리고 봉긋한 흙무덤을 덧그린다.
+	if buried_now:
+		var ground_y := float(rect.size.y)
+		var dirt_dark := Color(0.145, 0.094, 0.047, 1.0)
+		var dirt_light := Color(0.267, 0.176, 0.098, 1.0)
+		draw_rect(Rect2(-16.0, ground_y - 3.0, float(rect.size.x) + 32.0, 120.0), dirt_dark)
+		draw_set_transform(Vector2(rect.size.x / 2.0, ground_y - 5.0), 0.0, Vector2(1.1, 0.4))
+		draw_circle(Vector2.ZERO, float(rect.size.x) * 0.85, dirt_light)
+		draw_arc(Vector2.ZERO, float(rect.size.x) * 0.85, 0.0, TAU, 24, dirt_dark, 3.0)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+## Player와 동일한 착지 가이드 링 — 연습 모드 전용
 func _draw_landing_guide(ab: AirborneStatus) -> void:
+	if not Global.is_practice_mode: return
 	var local_target := Vector2(ab.landing_pos) - Vector2(rect.position) + Vector2(rect.size) / 2.0
 	var t := 1.0 - clampf(ab.time_left / max(0.001, ab.total_duration), 0.0, 1.0)
 	var r := lerpf(24.0, 10.0, t)

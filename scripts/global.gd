@@ -4,6 +4,11 @@ extends Node
 
 var selected_job: String = "swordsman"
 
+## 히트박스/판정 텔레그래프 등 디버그성 시각 요소를 보여줄지 여부.
+## 연습 모드(현재 game_scene)는 true, 추후 추가될 멀티플레이 씬은 false로 설정해
+## 상대에게 정확한 판정 범위가 노출되지 않도록 한다.
+var is_practice_mode: bool = true
+
 # ── 글로벌 연출 트리거 ────────────────────────────────────────────────────────
 # game_scene을 직접 참조할 수 없는 스크립트(직업 스킬 Resource 등)도 화면 흔들림/
 # 히트스톱을 요청할 수 있도록 시그널로 중계한다. game_scene이 _ready()에서 구독해

@@ -328,12 +328,11 @@ const RangedProjectileScript := preload("res://scripts/ranged_projectile.gd")
 
 const MELEE_RANGE_THRESHOLD := 140.0  ## 이 값 미만이면 근거리, 이상이면 원거리
 const RANGED_PROJ_SPEED     := 640.0  ## 원거리 발사체 속도 (px/s)
-const RANGED_CAST_LOCK      := 0.08   ## 원거리 캐스팅~발사 순간까지의 짧은 이동 잠금 (초)
 
 signal basic_attack_hit(target: Node2D, damage: float, dmg_types: Array)
 
 var scene_ref: Node2D     = null   ## game_scene 참조 — 발사체가 카메라 오프셋(cam_x/cam_y)을 읽는 데 사용
-var is_attacking: bool    = false  ## 공격 시퀀스 진행 중이면 이동 불가
+var is_attacking: bool    = false  ## 공격(근거리 스윙) 진행 중 여부 — 이동은 막지 않음, 상태 조회용
 var _melee_hitbox: Area2D = null   ## 현재 활성화된 근거리 히트박스 (없으면 null)
 
 ## 좌클릭 시 game_scene이 호출하는 진입점. 방향은 aim_dir(이미 마우스 데드존 보정이
@@ -345,7 +344,7 @@ func perform_basic_attack() -> bool:
 
 	var origin := Vector2(rect.get_center())
 	var dir := aim_dir.normalized() if aim_dir.length() > 0.01 else Vector2(float(facing), 0.0)
-	facing = 1 if dir.x >= 0.0 else -1
+	# facing(스프라이트 좌우 반전)은 handle_input()의 이동 방향이 유일한 기준 — 조준 방향으로는 갱신하지 않는다.
 
 	attack_cd_rem = attack_cd
 	is_attacking  = true
@@ -364,9 +363,9 @@ func _current_basic_dmg_types() -> Array:
 
 func _start_melee_attack(dir: Vector2) -> void:
 	start_basic_swing()
-	# 애니메이션/히트박스 지속 시간을 공격 속도(attack_cd = 1/attack_speed)에 비례해 동기화
+	# 애니메이션/히트박스 지속 시간을 공격 속도(attack_cd = 1/attack_speed)에 비례해 동기화.
+	# 대난투 특성상 공격 중에도 자유롭게 움직일 수 있어야 하므로 이동 잠금은 걸지 않는다.
 	var swing_duration := clampf(attack_cd * 0.4, 0.05, 0.5)
-	move_lock_time = maxf(move_lock_time, swing_duration)
 
 	var hb := Area2D.new()
 	hb.name = "MeleeHitbox"
@@ -390,8 +389,6 @@ func _on_melee_hit(target: Node2D) -> void:
 	basic_attack_hit.emit(target, attack, _current_basic_dmg_types())
 
 func _start_ranged_attack(origin: Vector2, dir: Vector2) -> void:
-	move_lock_time = maxf(move_lock_time, RANGED_CAST_LOCK)
-
 	var proj := Area2D.new()
 	proj.name = "RangedAttackProjectile"
 	proj.set_script(RangedProjectileScript)
@@ -401,7 +398,7 @@ func _start_ranged_attack(origin: Vector2, dir: Vector2) -> void:
 		attack, attack_range, _current_basic_dmg_types())
 	proj.hit_target.connect(_on_ranged_hit)
 
-	is_attacking = false   # 요구사항: 발사체를 발사하는 순간 이동 잠금 해제
+	is_attacking = false
 
 func _on_ranged_hit(target: Node2D, dmg: float, types: Array) -> void:
 	basic_attack_hit.emit(target, dmg, types)
@@ -561,11 +558,14 @@ func move_and_collide_map(dt: float, map_solids: Array, map_bushes: Array, world
 func _draw() -> void:
 	if dead: return
 	var jk: String = job.get("key", "")
+	var buried_now := is_buried()
 	var buried_oy := 0.0
-	if is_buried(): buried_oy = rect.size.y * 0.6
+	# 지면 아래로 가라앉는 방향(+)으로 크게 내려 머리만 살짝 보이게 한다.
+	# (기존 부호는 위로 띄우는 방향이라 "파묻힘"으로 읽히지 않던 버그)
+	if buried_now: buried_oy = rect.size.y * 1.3
 
 	var spr_x := float(rect.size.x / 2 - SPR_W / 2)
-	var spr_y := float(rect.size.y - SPR_H) - buried_oy
+	var spr_y := float(rect.size.y - SPR_H) + buried_oy
 	var spr_rect := Rect2(spr_x, spr_y, float(SPR_W), float(SPR_H))
 	# 시각 전용 오프셋이 적용된 스프라이트 사각형 (히트박스인 rect/spr_rect는 그대로 유지)
 	var visual_spr_rect := Rect2(spr_rect.position + visual_offset, spr_rect.size)
@@ -609,7 +609,7 @@ func _draw() -> void:
 
 	# Shovel 묻힘 표시 (삽 스택 dots)
 	var stack_n := shovel_stack_count()
-	if is_buried(): stack_n = 6
+	if buried_now: stack_n = 6
 	if stack_n > 0 and stack_n < 6:
 		for i in range(stack_n):
 			var dot_col := Color(0.478, 0.082, 0.082) if stack_n >= 5 else Color(0.941, 0.941, 0.941)
@@ -649,7 +649,7 @@ func _draw() -> void:
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		else:
 			var pivot := Vector2(ctr.x + float(facing) * 24.0, top + 19.0)
-			var angle := (-18.0 - basic_swing_angle) if facing >= 0 else (18.0 + basic_swing_angle)
+			var angle := (18.0 + basic_swing_angle) if facing >= 0 else (-18.0 - basic_swing_angle)
 			draw_set_transform(pivot, deg_to_rad(angle), Vector2(float(facing), 1.0))
 			_draw_sword_shape(cx, cy)
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -671,13 +671,33 @@ func _draw() -> void:
 		draw_rect(Rect2(0, by, float(rect.size.x) * ratio, 6.0),
 			Color(0.275, 0.51, 1.0) if team == "blue" else Color(1.0, 0.31, 0.31))
 
-	# Wind 패시브 스택
+	# Wind 패시브 스택 — 캐릭터 머리 위가 아니라 주위를 도는 최대 4개의 오브로 표시
 	if jk == "wind_archer" and wind_passive_stacks > 0:
+		var orbit_ctr := Vector2(visual_spr_rect.get_center())
+		var orbit_r := SPR_W * 0.62
+		var spin_t := Time.get_ticks_msec() / 1000.0 * 2.2
 		for i in range(wind_passive_stacks):
-			draw_circle(Vector2(4.0 + i * 10.0, spr_y + visual_offset.y - 10.0), 4.0, Color(0.235, 0.784, 0.847))
+			var a := spin_t + float(i) * (TAU / 4.0)
+			var orb_pos := orbit_ctr + Vector2(cos(a), sin(a) * 0.6) * orbit_r
+			draw_circle(orb_pos, 5.0, Color(0.235, 0.784, 0.847))
+			draw_arc(orb_pos, 5.0, 0.0, TAU, 10, Color(0.7, 0.98, 1.0, 0.8), 1.5)
+
+	# 파묻힘 — 지면 아래로 가라앉은 부분을 흙으로 완전히 가리고 봉긋한 흙무덤을 덧그린다.
+	# 그 밖의 모든 요소(스프라이트/검/HP바 등)보다 나중에 그려 확실히 덮는다.
+	if buried_now:
+		var ground_y := float(rect.size.y)
+		var dirt_dark := Color(0.145, 0.094, 0.047, 1.0)
+		var dirt_light := Color(0.267, 0.176, 0.098, 1.0)
+		draw_rect(Rect2(-20.0, ground_y - 4.0, float(rect.size.x) + 40.0, 160.0), dirt_dark)
+		draw_set_transform(Vector2(rect.size.x / 2.0, ground_y - 6.0), 0.0, Vector2(1.1, 0.4))
+		draw_circle(Vector2.ZERO, float(SPR_W) * 0.62, dirt_light)
+		draw_arc(Vector2.ZERO, float(SPR_W) * 0.62, 0.0, TAU, 24, dirt_dark, 3.0)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 ## 에어본/넉백 중 착지 예정 지점을 링으로 표시 — 경과 비율에 따라 반경이 서서히 줄어들며 착지 타이밍을 안내.
+## 정확한 착지 좌표를 드러내는 판정 정보이므로 연습 모드에서만 그린다.
 func _draw_landing_guide(ab: AirborneStatus) -> void:
+	if not Global.is_practice_mode: return
 	var local_target := Vector2(ab.landing_pos) - Vector2(rect.position) + Vector2(rect.size) / 2.0
 	var t := 1.0 - clampf(ab.time_left / max(0.001, ab.total_duration), 0.0, 1.0)
 	var r := lerpf(30.0, 12.0, t)
