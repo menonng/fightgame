@@ -1,10 +1,15 @@
 # 맵 타일 그리드화 실현안
 
-상태: **1단계(검증) 구현 완료** — `_build_map()`이 타일 그리드 + greedy merge 파이프라인으로
-교체되었고, 0(바닥)/1(부쉬) 타일에는 고정 시드 난수로 팔레트 변형을 배정해 맵을 확정한다.
-레이아웃 자체(벽 위치·부쉬 배치)는 기존과 동일하게 재현했다 — 2단계(레이아웃 재설계)는 아직 진행 전.
-대상 파일: `scripts/game_scene.gd` (`_build_map`, `_stamp_tile_rect`, `_merge_tiles_to_rects`,
-`_tile_row_span_matches`, `_assign_tile_variants`, `_draw_map`)
+상태: **1단계(검증) + 인스펙터 연동 구현 완료.**
+- 맵 크기 3200x2400, 타일 32x32 → 100x75 그리드로 확정.
+- 타일 속성을 (a)종류(0/1/2)와 (b)종류별 타일셋(팔레트) 두 가지로 분리하고, 둘 다
+  `MapTileDef` 리소스(`scripts/map_tile_def.gd`)로 만들어 `resources/map/{floor,bush,wall}_tile.tres`에서
+  인스펙터로 조정할 수 있게 했다.
+- 레이아웃(벽 위치·부쉬 배치)은 기존 2100x1400 기준 좌표를 새 맵 크기에 비례 확대해 재현했다 —
+  2단계(레이아웃을 실제로 다시 디자인)는 아직 진행 전.
+대상 파일: `scripts/game_scene.gd` (`_build_map`, `_load_tile_def`, `_stamp_tile_rect`,
+`_merge_tiles_to_rects`, `_tile_row_span_matches`, `_assign_tile_variants`, `_draw_map`),
+`scripts/map_tile_def.gd`(신규), `resources/map/*.tres`(신규), `scripts/global.gd`(WORLD_W/H/WALL 동기화)
 
 ## 1. 배경
 

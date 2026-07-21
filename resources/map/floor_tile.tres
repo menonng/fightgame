@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="MapTileDef" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/map_tile_def.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+tile_type = 0
+tileset_colors = Array[Color]([Color(0.13, 0.16, 0.11, 1), Color(0.148, 0.18, 0.122, 1), Color(0.112, 0.142, 0.096, 1)])
+draw_outline = false
+outline_color = Color(0, 0, 0, 0)
+outline_width = -1.0

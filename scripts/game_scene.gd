@@ -13,34 +13,31 @@ const TombScript    := preload("res://scripts/tombstone.gd")
 # 직업별 스킬은 player.skill_passive / skill_q / skill_e / skill_r 인스턴스로 접근
 
 # ── 맵 (탑다운 평면 — Plains → 부쉬 배치) ──────────────────────────────────────
-const WORLD_W := 2100; const WORLD_H := 1400
+const WORLD_W := 3200; const WORLD_H := 2400
 var map_solids: Array = []   ## 완전 차단 지형 (경계 벽) — 병합된 Rect2i, 충돌/렌더링 그대로 사용
 var map_bushes: Array = []   ## 부쉬 — 통과 가능, 이동속도 감소 + 은신 성격 (병합된 Rect2i)
 
 # ── 맵 타일 그리드 (docs/tile_map_proposal.md 실현안 구현) ───────────────────────
-## 타일 하나당 TILE_SIZE(64)px. 0/1/2 값으로 저작하고, 충돌용 map_solids/map_bushes는
-## 인접한 같은 타입 타일을 큰 사각형으로 병합해 생성한다(기존 충돌/렌더링 코드 무변경).
-## 0(바닥)/1(부쉬) 타일에는 여러 팔레트 중 하나를 난수로 배정해 "확정"(고정 시드로 결정론적)한다.
-const TILE_SIZE := 64
-const MAP_COLS := 33   # ceil(WORLD_W / TILE_SIZE)
-const MAP_ROWS := 22   # ceil(WORLD_H / TILE_SIZE)
+## 타일 하나당 TILE_SIZE(32)px, 3200x2400 맵 기준 100x75칸. 0/1/2 값으로 저작하고,
+## 충돌용 map_solids/map_bushes는 인접한 같은 타입 타일을 큰 사각형으로 병합해 생성한다
+## (기존 충돌/렌더링 코드 무변경). 각 타일의 속성은 (a)타일 종류(0/1/2)와 (b)그 종류의
+## 디자인(타일셋/팔레트) 두 가지이며, 둘 다 MapTileDef 리소스(resources/map/*.tres)로
+## 분리해 인스펙터에서 조정할 수 있다. 0(바닥)/1(부쉬) 타일은 그 타일셋 중 하나를 난수로
+## 배정해 "확정"(고정 시드로 결정론적, 프레임마다 재계산되지 않음)한다.
+const TILE_SIZE := 32
+const MAP_COLS := 100   # WORLD_W / TILE_SIZE (3200/32, 나머지 없음)
+const MAP_ROWS := 75    # WORLD_H / TILE_SIZE (2400/32, 나머지 없음)
+const WALL_TILES := 2   ## 경계벽 두께(타일 단위) — 그리드에 맞춰 정수 타일로 정의
 enum TileType { FLOOR = 0, BUSH = 1, WALL = 2 }
 
 const MAP_RNG_SEED := 7007   ## 맵을 '확정'하는 고정 시드 — 실행할 때마다 같은 결과 재현
 
-const FLOOR_TILESET_COLORS: Array[Color] = [
-	Color(0.130, 0.160, 0.110),
-	Color(0.148, 0.180, 0.122),
-	Color(0.112, 0.142, 0.096),
-]
-const BUSH_TILESET_COLORS: Array[Color] = [
-	Color(0.220, 0.450, 0.200, 0.75),
-	Color(0.248, 0.478, 0.222, 0.75),
-	Color(0.192, 0.415, 0.178, 0.75),
-]
+var _floor_def: MapTileDef = null
+var _bush_def: MapTileDef  = null
+var _wall_def: MapTileDef  = null
 
 var _tile_grid: Array = []      ## flat Array[int] (TileType 값), 크기 MAP_COLS*MAP_ROWS
-var _tile_variant: Array = []   ## flat Array[int], FLOOR/BUSH 타일의 팔레트 인덱스(WALL은 -1)
+var _tile_variant: Array = []   ## flat Array[int], FLOOR/BUSH 타일의 타일셋 인덱스(WALL은 -1)
 
 # ── 엔티티 ───────────────────────────────────────────────────────────────────
 var player: Node2D  = null
@@ -159,27 +156,38 @@ func _ready() -> void:
 ## 병합(greedy merge)해 map_solids/map_bushes를 만든다 — 결과는 기존과 동일한 "개수
 ## 적은 Rect2i 배열"이라 충돌/렌더링 쪽 코드는 그대로 두고 여기만 교체하면 된다.
 func _build_map() -> void:
-	const WALL := 40   ## 경계 벽 두께
+	_floor_def = _load_tile_def("floor")
+	_bush_def  = _load_tile_def("bush")
+	_wall_def  = _load_tile_def("wall")
 
-	# 기존 배치를 그대로 타일 그리드 좌표로 옮김(1단계 검증: 기존과 동일한 레이아웃 재현)
+	var wall_px: int = WALL_TILES * TILE_SIZE
 	var wall_rects: Array = [
-		Rect2i(0, 0, WORLD_W, WALL),                    # 위쪽 벽
-		Rect2i(0, WORLD_H - WALL, WORLD_W, WALL),       # 아래쪽 벽
-		Rect2i(0, 0, WALL, WORLD_H),                    # 왼쪽 벽
-		Rect2i(WORLD_W - WALL, 0, WALL, WORLD_H),       # 오른쪽 벽
+		Rect2i(0, 0, WORLD_W, wall_px),                       # 위쪽 벽
+		Rect2i(0, WORLD_H - wall_px, WORLD_W, wall_px),       # 아래쪽 벽
+		Rect2i(0, 0, wall_px, WORLD_H),                       # 왼쪽 벽
+		Rect2i(WORLD_W - wall_px, 0, wall_px, WORLD_H),       # 오른쪽 벽
 	]
-	var bush_rects: Array = [
-		Rect2i(300, 300, 220, 180),
-		Rect2i(760, 220, 260, 200),
-		Rect2i(1300, 340, 240, 190),
-		Rect2i(1680, 260, 220, 180),
-		Rect2i(400, 700, 260, 220),
-		Rect2i(900, 780, 300, 220),
-		Rect2i(1450, 720, 240, 200),
-		Rect2i(650, 1080, 260, 200),
-		Rect2i(1200, 1120, 280, 200),
-		Rect2i(180, 1000, 200, 180),
+
+	# 기존(2100x1400 기준) 부쉬 배치를 새 맵 크기(3200x2400)에 비례 확대해 재현한다.
+	# _stamp_tile_rect가 픽셀→타일 인덱스 변환(정수 나눗셈)을 하므로 별도 반올림 없이
+	# 그대로 넘겨도 자동으로 격자에 맞춰진다.
+	const OLD_WORLD_W := 2100.0
+	const OLD_WORLD_H := 1400.0
+	var scale_x: float = float(WORLD_W) / OLD_WORLD_W
+	var scale_y: float = float(WORLD_H) / OLD_WORLD_H
+	var old_bush_rects: Array = [
+		Rect2i(300, 300, 220, 180), Rect2i(760, 220, 260, 200),
+		Rect2i(1300, 340, 240, 190), Rect2i(1680, 260, 220, 180),
+		Rect2i(400, 700, 260, 220), Rect2i(900, 780, 300, 220),
+		Rect2i(1450, 720, 240, 200), Rect2i(650, 1080, 260, 200),
+		Rect2i(1200, 1120, 280, 200), Rect2i(180, 1000, 200, 180),
 	]
+	var bush_rects: Array = []
+	for r in old_bush_rects:
+		var ri: Rect2i = r
+		bush_rects.append(Rect2i(
+			int(float(ri.position.x) * scale_x), int(float(ri.position.y) * scale_y),
+			int(float(ri.size.x) * scale_x), int(float(ri.size.y) * scale_y)))
 
 	_tile_grid = []
 	_tile_grid.resize(MAP_COLS * MAP_ROWS)
@@ -191,6 +199,30 @@ func _build_map() -> void:
 	map_bushes = _merge_tiles_to_rects(TileType.BUSH)
 
 	_assign_tile_variants()
+
+## resources/map/{kind}_tile.tres(인스펙터에서 조정된 리소스)가 있으면 우선 사용,
+## 없으면 코드 기본값으로 즉석 생성 — jobs/*의 .tres 우선 로드 관례와 동일한 패턴.
+func _load_tile_def(kind: String) -> MapTileDef:
+	var tres_path := "res://resources/map/%s_tile.tres" % kind
+	if ResourceLoader.exists(tres_path):
+		return load(tres_path)
+	var def := MapTileDef.new()
+	match kind:
+		"floor":
+			def.tile_type = TileType.FLOOR
+			def.tileset_colors = [Color(0.13, 0.16, 0.11)]
+		"bush":
+			def.tile_type = TileType.BUSH
+			def.tileset_colors = [Color(0.22, 0.45, 0.20, 0.75)]
+			def.draw_outline = true
+			def.outline_color = Color(0.14, 0.30, 0.13, 0.9)
+			def.outline_width = 2.0
+		"wall":
+			def.tile_type = TileType.WALL
+			def.tileset_colors = [Color(0.18, 0.35, 0.22)]
+			def.draw_outline = true
+			def.outline_color = Color(0.10, 0.18, 0.11)
+	return def
 
 ## 픽셀 좌표 Rect2i를 타일 인덱스 범위로 변환해 그리드에 값을 채운다.
 func _stamp_tile_rect(r: Rect2i, value: int) -> void:
@@ -235,8 +267,8 @@ func _tile_row_span_matches(row: int, col: int, width: int, target_value: int, c
 			return false
 	return true
 
-## 0(바닥)/1(부쉬) 타일마다 팔레트 중 하나를 난수로 배정해 맵을 '확정'한다.
-## 고정 시드를 쓰므로 실행할 때마다 항상 같은 배치가 재현된다.
+## 0(바닥)/1(부쉬) 타일마다 해당 MapTileDef.tileset_colors 중 하나를 난수로 배정해
+## 맵을 '확정'한다. 고정 시드를 쓰므로 실행할 때마다 항상 같은 배치가 재현된다.
 func _assign_tile_variants() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = MAP_RNG_SEED
@@ -245,9 +277,9 @@ func _assign_tile_variants() -> void:
 	for i in range(_tile_grid.size()):
 		var t: int = _tile_grid[i]
 		if t == TileType.FLOOR:
-			_tile_variant[i] = rng.randi_range(0, FLOOR_TILESET_COLORS.size() - 1)
+			_tile_variant[i] = rng.randi_range(0, maxi(0, _floor_def.tileset_colors.size() - 1))
 		elif t == TileType.BUSH:
-			_tile_variant[i] = rng.randi_range(0, BUSH_TILESET_COLORS.size() - 1)
+			_tile_variant[i] = rng.randi_range(0, maxi(0, _bush_def.tileset_colors.size() - 1))
 		else:
 			_tile_variant[i] = -1
 
@@ -728,24 +760,33 @@ func _update_camera() -> void:
 
 # ── 맵 렌더 ──────────────────────────────────────────────────────────────────
 func _draw_map() -> void:
-	# 바닥/부쉬 — 타일(0/1)마다 확정된 팔레트 인덱스로 칠한다. 벽(2)은 여기서 건너뛰고
-	# 아래에서 병합된 사각형으로 그린다(변형 없이 단색 유지).
-	for row in range(MAP_ROWS):
-		for col in range(MAP_COLS):
+	# 바닥/부쉬 — 타일(0/1)마다 확정된 타일셋(MapTileDef.tileset_colors) 인덱스로 칠한다.
+	# 벽(2)은 여기서 건너뛰고 아래에서 병합된 사각형으로 그린다.
+	# 맵이 100x75(7500칸)로 커졌으므로, 매 프레임 전체를 순회하지 않고 화면에 보이는
+	# 범위의 타일만 순회한다(카메라 컬링) — 시야 밖 타일은 어차피 그려도 보이지 않는다.
+	var col0: int = clampi(int(cam_x) / TILE_SIZE - 1, 0, MAP_COLS - 1)
+	var col1: int = clampi(int(cam_x + SCR_W) / TILE_SIZE + 1, 0, MAP_COLS - 1)
+	var row0: int = clampi(int(cam_y) / TILE_SIZE - 1, 0, MAP_ROWS - 1)
+	var row1: int = clampi(int(cam_y + SCR_H) / TILE_SIZE + 1, 0, MAP_ROWS - 1)
+	for row in range(row0, row1 + 1):
+		for col in range(col0, col1 + 1):
 			var idx: int = row * MAP_COLS + col
 			var t: int = _tile_grid[idx]
 			if t == TileType.WALL: continue
 			var variant: int = _tile_variant[idx]
-			var cell_color: Color = FLOOR_TILESET_COLORS[variant] if t == TileType.FLOOR else BUSH_TILESET_COLORS[variant]
+			var def: MapTileDef = _floor_def if t == TileType.FLOOR else _bush_def
+			var cell_color: Color = def.tileset_colors[variant]
 			var cell := Rect2i(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE)
 			_map_draw.draw_rect(_ws(cell), cell_color)
 	# 경계 벽 — 병합된 사각형
 	for r in map_solids:
-		_map_draw.draw_rect(_ws(r), Color(0.18, 0.35, 0.22))
-		_map_draw.draw_rect(_ws(r), Color(0.10, 0.18, 0.11), false)
+		_map_draw.draw_rect(_ws(r), _wall_def.tileset_colors[0])
+		if _wall_def.draw_outline:
+			_map_draw.draw_rect(_ws(r), _wall_def.outline_color, false, _wall_def.outline_width)
 	# 부쉬 테두리 — 채움은 위에서 타일 단위로 이미 그렸으므로 병합 영역 외곽선만 덧그린다.
-	for r in map_bushes:
-		_map_draw.draw_rect(_ws(r), Color(0.14, 0.30, 0.13, 0.9), false, 2.0)
+	if _bush_def.draw_outline:
+		for r in map_bushes:
+			_map_draw.draw_rect(_ws(r), _bush_def.outline_color, false, _bush_def.outline_width)
 
 func _ws(r) -> Rect2:
 	return Rect2(r.position.x - cam_x, r.position.y - cam_y, r.size.x, r.size.y)
