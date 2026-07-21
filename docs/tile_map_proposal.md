@@ -1,7 +1,10 @@
 # 맵 타일 그리드화 실현안
 
-상태: 설계안 (구현 보류 — 사용자 승인 후 진행)
-대상 파일: `scripts/game_scene.gd` (`_build_map`), 신규 유틸리티 함수 추가 예정
+상태: **1단계(검증) 구현 완료** — `_build_map()`이 타일 그리드 + greedy merge 파이프라인으로
+교체되었고, 0(바닥)/1(부쉬) 타일에는 고정 시드 난수로 팔레트 변형을 배정해 맵을 확정한다.
+레이아웃 자체(벽 위치·부쉬 배치)는 기존과 동일하게 재현했다 — 2단계(레이아웃 재설계)는 아직 진행 전.
+대상 파일: `scripts/game_scene.gd` (`_build_map`, `_stamp_tile_rect`, `_merge_tiles_to_rects`,
+`_tile_row_span_matches`, `_assign_tile_variants`, `_draw_map`)
 
 ## 1. 배경
 

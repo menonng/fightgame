@@ -14,8 +14,33 @@ const TombScript    := preload("res://scripts/tombstone.gd")
 
 # ── 맵 (탑다운 평면 — Plains → 부쉬 배치) ──────────────────────────────────────
 const WORLD_W := 2100; const WORLD_H := 1400
-var map_solids: Array = []   ## 완전 차단 지형 (경계 벽)
-var map_bushes: Array = []   ## 부쉬 — 통과 가능, 이동속도 감소 + 은신 성격
+var map_solids: Array = []   ## 완전 차단 지형 (경계 벽) — 병합된 Rect2i, 충돌/렌더링 그대로 사용
+var map_bushes: Array = []   ## 부쉬 — 통과 가능, 이동속도 감소 + 은신 성격 (병합된 Rect2i)
+
+# ── 맵 타일 그리드 (docs/tile_map_proposal.md 실현안 구현) ───────────────────────
+## 타일 하나당 TILE_SIZE(64)px. 0/1/2 값으로 저작하고, 충돌용 map_solids/map_bushes는
+## 인접한 같은 타입 타일을 큰 사각형으로 병합해 생성한다(기존 충돌/렌더링 코드 무변경).
+## 0(바닥)/1(부쉬) 타일에는 여러 팔레트 중 하나를 난수로 배정해 "확정"(고정 시드로 결정론적)한다.
+const TILE_SIZE := 64
+const MAP_COLS := 33   # ceil(WORLD_W / TILE_SIZE)
+const MAP_ROWS := 22   # ceil(WORLD_H / TILE_SIZE)
+enum TileType { FLOOR = 0, BUSH = 1, WALL = 2 }
+
+const MAP_RNG_SEED := 7007   ## 맵을 '확정'하는 고정 시드 — 실행할 때마다 같은 결과 재현
+
+const FLOOR_TILESET_COLORS: Array[Color] = [
+	Color(0.130, 0.160, 0.110),
+	Color(0.148, 0.180, 0.122),
+	Color(0.112, 0.142, 0.096),
+]
+const BUSH_TILESET_COLORS: Array[Color] = [
+	Color(0.220, 0.450, 0.200, 0.75),
+	Color(0.248, 0.478, 0.222, 0.75),
+	Color(0.192, 0.415, 0.178, 0.75),
+]
+
+var _tile_grid: Array = []      ## flat Array[int] (TileType 값), 크기 MAP_COLS*MAP_ROWS
+var _tile_variant: Array = []   ## flat Array[int], FLOOR/BUSH 타일의 팔레트 인덱스(WALL은 -1)
 
 # ── 엔티티 ───────────────────────────────────────────────────────────────────
 var player: Node2D  = null
@@ -130,17 +155,20 @@ func _ready() -> void:
 
 ## 탑다운 평면 맵 — 기존 플랫폼/사다리/점프패드를 전부 제거하고
 ## 사방 경계 벽 + 부쉬(엄폐 지형) 배치로 대체.
+## 벽/부쉬 배치를 타일 그리드(0=바닥/1=부쉬/2=벽)에 찍은 뒤, 인접한 같은 타입 타일을
+## 병합(greedy merge)해 map_solids/map_bushes를 만든다 — 결과는 기존과 동일한 "개수
+## 적은 Rect2i 배열"이라 충돌/렌더링 쪽 코드는 그대로 두고 여기만 교체하면 된다.
 func _build_map() -> void:
 	const WALL := 40   ## 경계 벽 두께
-	map_solids = [
+
+	# 기존 배치를 그대로 타일 그리드 좌표로 옮김(1단계 검증: 기존과 동일한 레이아웃 재현)
+	var wall_rects: Array = [
 		Rect2i(0, 0, WORLD_W, WALL),                    # 위쪽 벽
 		Rect2i(0, WORLD_H - WALL, WORLD_W, WALL),       # 아래쪽 벽
 		Rect2i(0, 0, WALL, WORLD_H),                    # 왼쪽 벽
 		Rect2i(WORLD_W - WALL, 0, WALL, WORLD_H),       # 오른쪽 벽
 	]
-
-	# 부쉬 배치 — 맵 곳곳에 엄폐용 수풀. 크기·위치는 임의 배치(추후 조정 가능)
-	map_bushes = [
+	var bush_rects: Array = [
 		Rect2i(300, 300, 220, 180),
 		Rect2i(760, 220, 260, 200),
 		Rect2i(1300, 340, 240, 190),
@@ -152,6 +180,76 @@ func _build_map() -> void:
 		Rect2i(1200, 1120, 280, 200),
 		Rect2i(180, 1000, 200, 180),
 	]
+
+	_tile_grid = []
+	_tile_grid.resize(MAP_COLS * MAP_ROWS)
+	for i in range(_tile_grid.size()): _tile_grid[i] = TileType.FLOOR
+	for r in wall_rects: _stamp_tile_rect(r, TileType.WALL)
+	for r in bush_rects: _stamp_tile_rect(r, TileType.BUSH)
+
+	map_solids = _merge_tiles_to_rects(TileType.WALL)
+	map_bushes = _merge_tiles_to_rects(TileType.BUSH)
+
+	_assign_tile_variants()
+
+## 픽셀 좌표 Rect2i를 타일 인덱스 범위로 변환해 그리드에 값을 채운다.
+func _stamp_tile_rect(r: Rect2i, value: int) -> void:
+	var c0: int = clampi(int(r.position.x) / TILE_SIZE, 0, MAP_COLS - 1)
+	var c1: int = clampi(int(r.position.x + r.size.x - 1) / TILE_SIZE, 0, MAP_COLS - 1)
+	var r0: int = clampi(int(r.position.y) / TILE_SIZE, 0, MAP_ROWS - 1)
+	var r1: int = clampi(int(r.position.y + r.size.y - 1) / TILE_SIZE, 0, MAP_ROWS - 1)
+	for row in range(r0, r1 + 1):
+		for col in range(c0, c1 + 1):
+			_tile_grid[row * MAP_COLS + col] = value
+
+## 같은 값의 인접 타일을 최대한 큰 사각형으로 묶는 greedy merge(2D 그리디 메싱).
+## 맵 생성 시 1회만 실행되며, 결과는 지금까지의 손코딩 Rect2i 배열과 동일한 형태다.
+func _merge_tiles_to_rects(target_value: int) -> Array:
+	var consumed: Array = []
+	consumed.resize(MAP_COLS * MAP_ROWS)
+	for i in range(consumed.size()): consumed[i] = false
+	var rects: Array = []
+	for row in range(MAP_ROWS):
+		for col in range(MAP_COLS):
+			var idx: int = row * MAP_COLS + col
+			if _tile_grid[idx] != target_value or consumed[idx]:
+				continue
+			var width: int = 1
+			while col + width < MAP_COLS \
+					and _tile_grid[row * MAP_COLS + col + width] == target_value \
+					and not consumed[row * MAP_COLS + col + width]:
+				width += 1
+			var height: int = 1
+			while row + height < MAP_ROWS and _tile_row_span_matches(row + height, col, width, target_value, consumed):
+				height += 1
+			for ry in range(row, row + height):
+				for rx in range(col, col + width):
+					consumed[ry * MAP_COLS + rx] = true
+			rects.append(Rect2i(col * TILE_SIZE, row * TILE_SIZE, width * TILE_SIZE, height * TILE_SIZE))
+	return rects
+
+func _tile_row_span_matches(row: int, col: int, width: int, target_value: int, consumed: Array) -> bool:
+	for c in range(col, col + width):
+		var idx: int = row * MAP_COLS + c
+		if _tile_grid[idx] != target_value or consumed[idx]:
+			return false
+	return true
+
+## 0(바닥)/1(부쉬) 타일마다 팔레트 중 하나를 난수로 배정해 맵을 '확정'한다.
+## 고정 시드를 쓰므로 실행할 때마다 항상 같은 배치가 재현된다.
+func _assign_tile_variants() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = MAP_RNG_SEED
+	_tile_variant = []
+	_tile_variant.resize(_tile_grid.size())
+	for i in range(_tile_grid.size()):
+		var t: int = _tile_grid[i]
+		if t == TileType.FLOOR:
+			_tile_variant[i] = rng.randi_range(0, FLOOR_TILESET_COLORS.size() - 1)
+		elif t == TileType.BUSH:
+			_tile_variant[i] = rng.randi_range(0, BUSH_TILESET_COLORS.size() - 1)
+		else:
+			_tile_variant[i] = -1
 
 # ── 피해 헬퍼 ─────────────────────────────────────────────────────────────────
 ## is_primary_hit: 평타/Q/E/R의 단발성 직접 적중이면 true(기본값) — 궁극기 쿨감 + 히트스톱 발동.
@@ -630,15 +728,23 @@ func _update_camera() -> void:
 
 # ── 맵 렌더 ──────────────────────────────────────────────────────────────────
 func _draw_map() -> void:
-	# 바닥 (전체 평면 배경)
-	_map_draw.draw_rect(_ws(Rect2i(0, 0, WORLD_W, WORLD_H)), Color(0.13, 0.16, 0.11))
-	# 경계 벽
+	# 바닥/부쉬 — 타일(0/1)마다 확정된 팔레트 인덱스로 칠한다. 벽(2)은 여기서 건너뛰고
+	# 아래에서 병합된 사각형으로 그린다(변형 없이 단색 유지).
+	for row in range(MAP_ROWS):
+		for col in range(MAP_COLS):
+			var idx: int = row * MAP_COLS + col
+			var t: int = _tile_grid[idx]
+			if t == TileType.WALL: continue
+			var variant: int = _tile_variant[idx]
+			var cell_color: Color = FLOOR_TILESET_COLORS[variant] if t == TileType.FLOOR else BUSH_TILESET_COLORS[variant]
+			var cell := Rect2i(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+			_map_draw.draw_rect(_ws(cell), cell_color)
+	# 경계 벽 — 병합된 사각형
 	for r in map_solids:
 		_map_draw.draw_rect(_ws(r), Color(0.18, 0.35, 0.22))
 		_map_draw.draw_rect(_ws(r), Color(0.10, 0.18, 0.11), false)
-	# 부쉬 — 통과 가능한 엄폐 지형, 반투명 녹색으로 표시
+	# 부쉬 테두리 — 채움은 위에서 타일 단위로 이미 그렸으므로 병합 영역 외곽선만 덧그린다.
 	for r in map_bushes:
-		_map_draw.draw_rect(_ws(r), Color(0.22, 0.45, 0.20, 0.75))
 		_map_draw.draw_rect(_ws(r), Color(0.14, 0.30, 0.13, 0.9), false, 2.0)
 
 func _ws(r) -> Rect2:
