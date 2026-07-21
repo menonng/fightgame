@@ -27,13 +27,13 @@ extends Resource
 @export var r_dmg_types: Array[String] = ["physical"]  ## R 스킬 피해 유형
 @export_group("스킬 이름 / 설명")
 @export var passive_name: String = "리바이브 트릭컬"
-@export var passive_desc: String = "체력이 0이 되면 부활해 5초간 회복합니다. 100초마다 재발동. 부활 중 받는 피해가 90% 감소합니다."
+@export var passive_desc: String = "100초마다 다시 살아납니다."
 @export var q_name: String = "나타드코코"
-@export var q_desc: String = "5초간 공격력이 크게 상승하지만 이속과 공속이 느려집니다. 이 상태의 기본 공격은 방어를 무시하는 고정 피해를 줍니다."
+@export var q_desc: String = "5초 동안 강력해지지만 느려집니다."
 @export var e_name: String = "매지컬플레임초울트라비저블스워드나이트"
-@export var e_desc: String = "굉장히 신성해보이는 검을 소환해 마우스 방향 지점에 내리찍습니다. 착지 시 범위 내 대상의 최대 체력 10%를 깎고 10초간 지속 피해를 남깁니다. 발동 직후 1초간 이속이 2배가 됩니다."
+@export var e_desc: String = "굉장히 신성해보이는 검의 힘을 해방합니다."
 @export var r_name: String = "돌려 돌려 돌림판"
-@export var r_desc: String = "5초간 고속 회전합니다. 이속 증가, 받는 피해 40% 감소. 인접한 적에게 0.5초마다 피해를 입힙니다."
+@export var r_desc: String = "이젠 나의 보너스 타임"
 
 # ── 내부 상수 (코드 참조용) ──────────────────────────────────────────────────
 const KEY:    String = "swordsman"

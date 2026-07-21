@@ -838,9 +838,13 @@ func _draw_hud() -> void:
 		_draw_rounded_border(Rect2(ix, iy, sz, sz), Color(0.333, 0.333, 0.392), 2.0, 10.0)
 		_hud.draw_string(_font, Vector2(ix + 6.0, iy + 20.0), keys[i],
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.922, 0.922, 0.941))
-		var sname: String = (names[i] as String).left(6)
-		_hud.draw_string(_font, Vector2(ix + 3.0, iy + sz - 5.0), sname,
-			HORIZONTAL_ALIGNMENT_LEFT, int(sz) - 4, 10, Color(0.75, 0.82, 1.0, 0.8))
+		# 스킬명이 박스 폭을 넘으면 잘라내는 대신 줄바꿈해 전체 이름이 보이게 한다.
+		var name_lines: Array = _wrap_text(names[i] as String, _font, 10, sz - 6.0)
+		var name_y := iy + 28.0
+		for nl in name_lines:
+			_hud.draw_string(_font, Vector2(ix + 3.0, name_y), nl,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.75, 0.82, 1.0, 0.8))
+			name_y += 11.0
 		var cd: float = cds[i]; var rem: float = rems[i]
 		if cd > 0.0 and rem > 0.0:
 			_draw_radial_cd(ix, iy, sz, minf(1.0, rem / cd))
@@ -963,18 +967,61 @@ func _draw_rounded_border(rect: Rect2, col: Color, width: float, radius: float) 
 	_hud.draw_arc(Vector2(x+w-rr,y+h-rr), rr, 0.0,    PI*0.5, 8, col, width)
 
 # ── 툴팁 그리기 — 원본 Python Tooltip.draw() 1:1 이식 ──────────────────────
+const TOOLTIP_MAX_WIDTH := 300.0   ## 제목/설명 텍스트가 이 폭을 넘으면 자동 줄바꿈
+
+## 공백 기준으로 우선 줄을 나누고, 공백이 없는 긴 덩어리(스킬명 등)는 글자 단위로
+## 강제 개행해 max_width(px) 안에 들어가게 한다 — 잘라내지 않고 유동적으로 접는다.
+func _wrap_text(text: String, font: Font, font_size: int, max_width: float) -> Array:
+	var lines: Array = []
+	var words: PackedStringArray = text.split(" ")
+	var current := ""
+	for word in words:
+		var candidate: String = word if current.is_empty() else current + " " + word
+		if font.get_string_size(candidate, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x <= max_width:
+			current = candidate
+			continue
+		if not current.is_empty():
+			lines.append(current)
+			current = ""
+		if font.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x <= max_width:
+			current = word
+			continue
+		# 단어 자체가 max_width보다 넓다(공백 없는 긴 한글 이름 등) — 글자 단위로 강제 개행
+		var chunk := ""
+		for ch in word:
+			var test: String = chunk + ch
+			if font.get_string_size(test, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > max_width and not chunk.is_empty():
+				lines.append(chunk)
+				chunk = ch
+			else:
+				chunk = test
+		current = chunk
+	if not current.is_empty():
+		lines.append(current)
+	if lines.is_empty(): lines.append("")
+	return lines
+
 func _draw_tooltip(anchor: Vector2, lines: Array) -> void:
 	if _font == null or lines.is_empty():
 		return
 
-	# 크기 측정
+	var title: String = String(lines[0])
+	var desc: String  = String(lines[1]) if lines.size() > 1 else ""
+	var title_size := 18
+	var desc_size  := 16
+
+	var title_lines: Array = _wrap_text(title, _font, title_size, TOOLTIP_MAX_WIDTH)
+	var desc_lines: Array  = _wrap_text(desc, _font, desc_size, TOOLTIP_MAX_WIDTH) if desc != "" else []
+
+	# 크기 측정 — 실제 줄바꿈된 각 줄의 폭/높이 기준으로 박스를 잡는다.
 	var tw := 0.0
 	var th := 8.0
-	for i in range(lines.size()):
-		var sz := float(18 if i == 0 else 16)
-		var lw := _font.get_string_size(lines[i], HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x
-		tw = maxf(tw, lw)
-		th += sz + 4.0
+	for l in title_lines:
+		tw = maxf(tw, _font.get_string_size(l, HORIZONTAL_ALIGNMENT_LEFT, -1, title_size).x)
+		th += float(title_size) + 4.0
+	for l in desc_lines:
+		tw = maxf(tw, _font.get_string_size(l, HORIZONTAL_ALIGNMENT_LEFT, -1, desc_size).x)
+		th += float(desc_size) + 4.0
 	tw += 16.0; th += 8.0
 
 	# 위치: anchor 위쪽
@@ -988,10 +1035,13 @@ func _draw_tooltip(anchor: Vector2, lines: Array) -> void:
 	_hud.draw_rect(Rect2(rx, ry, tw, th), Color(0.078, 0.078, 0.094))
 	_draw_rounded_border(Rect2(rx, ry, tw, th), Color(0.431, 0.431, 0.510), 2.0, 10.0)
 
-	# 텍스트: 첫 줄 제목(18px), 나머지 본문(16px)
+	# 텍스트: 제목(18px) 줄들 → 본문(16px) 줄들
 	var cy := ry + 10.0
-	for i in range(lines.size()):
-		var sz := 18 if i == 0 else 16
-		_hud.draw_string(_font, Vector2(rx + 8.0, cy + float(sz)),
-			lines[i], HORIZONTAL_ALIGNMENT_LEFT, -1, sz, Color(0.961, 0.961, 0.980))
-		cy += float(sz) + 4.0
+	for l in title_lines:
+		_hud.draw_string(_font, Vector2(rx + 8.0, cy + float(title_size)),
+			l, HORIZONTAL_ALIGNMENT_LEFT, -1, title_size, Color(0.961, 0.961, 0.980))
+		cy += float(title_size) + 4.0
+	for l in desc_lines:
+		_hud.draw_string(_font, Vector2(rx + 8.0, cy + float(desc_size)),
+			l, HORIZONTAL_ALIGNMENT_LEFT, -1, desc_size, Color(0.961, 0.961, 0.980))
+		cy += float(desc_size) + 4.0

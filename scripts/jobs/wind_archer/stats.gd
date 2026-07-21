@@ -21,13 +21,13 @@ extends Resource
 @export var r_dmg_types: Array[String] = ["physical"]  ## R 스킬 피해 유형
 @export_group("스킬 이름 / 설명")
 @export var passive_name: String = "바람의 나라:연"
-@export var passive_desc: String = "기본 공격이 누적될수록 사거리, 공속, 공격력, 투사체 속도가 증가합니다. 3·5·7·9타마다 스택이 쌓이고 16타에 초기화됩니다."
+@export var passive_desc: String = "바람궁수의 신빠람은 다다익선입니다."
 @export var q_name: String = "바람이 불어오는 곳"
-@export var q_desc: String = "4초간 피해 보호막을 두릅니다. 발동 직후 1초는 물리 피해 50% 감소, 이후 3초는 15% 감소합니다."
+@export var q_desc: String = "4초 동안 피해를 감소시킵니다."
 @export var e_name: String = "il vento d'oro"
-@export var e_desc: String = "『황금의 바람』을 느껴보세요. 5초간 비행 형태로 변신합니다."
+@export var e_desc: String = "『황금의 바람』을 느껴보세요."
 @export var r_name: String = "신궁"
-@export var r_desc: String = "강력한 바람 화살을 발사합니다. 관통하며 피격 시 대상을 잠시 공중에 띄웁니다."
+@export var r_desc: String = "바람 화살의 힘은 가히 신의 힘에 필적합니다."
 
 const KEY:      String = "wind_archer"
 const SPRITE:   String = "res://assets/wind_archer_base.png"

@@ -29,13 +29,13 @@ extends Resource
 @export var q_dmg_types: Array[String] = ["magical"]  ## Q 스킬 피해 유형
 @export_group("스킬 이름 / 설명")
 @export var passive_name: String = "난 최강의 도박꾼이다아아아아아아"
-@export var passive_desc: String = "10초마다 모든 스탯이 무작위로 재결정됩니다. 체력이 깎인 상태에서도 비율은 유지됩니다."
+@export var passive_desc: String = "다니엘 J. D'아르비는 세계제1의 도박쟁이입니다."
 @export var q_name: String = "레레레레레레레레레레이즈라고！?!!!"
-@export var q_desc: String = "대상에게 카지노 칩을 연속으로 던집니다. 칩의 수, 피해, 속도, 쿨다운은 현재 스탯 기반으로 결정되는 마법 피해입니다."
+@export var q_desc: String = "카지노 칩을 카지노처럼 던집니다."
 @export var e_name: String = "「Good.」"
-@export var e_desc: String = "현재 스탯 중 하나를 골라 그 값에 비례한 이속 버프를 4초간 획득합니다. 어느 스탯이 선택될지는 알 수 없습니다."
+@export var e_desc: String = "현재 스탯 중 하나만큼 이동속도를 4초간 상승시킵니다."
 @export var r_name: String = "영혼은 받아가마!"
-@export var r_desc: String = "14초간 아우라를 펼칩니다. 적과 접촉 시 스탯을 훔쳐 적은 30초간 약화, 다비는 60초간 2배 강화됩니다."
+@export var r_desc: String = "접촉한 적의 스탯을 빼앗습니다."
 
 const KEY:    String = "darby"
 const SPRITE: String = "res://assets/darby.png"
