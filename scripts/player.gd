@@ -431,7 +431,8 @@ func _start_melee_attack(dir: Vector2) -> void:
 	start_basic_swing()
 	# 애니메이션/히트박스 지속 시간을 공격 속도(attack_cd = 1/attack_speed)에 비례해 동기화.
 	# 대난투 특성상 공격 중에도 자유롭게 움직일 수 있어야 하므로 이동 잠금은 걸지 않는다.
-	var swing_duration := clampf(attack_cd * 0.4, 0.05, 0.5)
+	# 히트박스가 살아있는 시간을 기존 대비 절반으로 감소(0.4/0.05/0.5 → 0.2/0.025/0.25).
+	var swing_duration := clampf(attack_cd * 0.2, 0.025, 0.25)
 
 	var hb := Area2D.new()
 	hb.name = "MeleeHitbox"
