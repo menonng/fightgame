@@ -1,6 +1,8 @@
 # player.gd — 직업별 스킬 파일 위임 구조
 extends Node2D
 
+const ReviveLightBurstScene := preload("res://scenes/objects/revive_light_burst.tscn")
+
 # ── 직업별 스킬 Resource (setup()에서 job.key에 따라 인스턴스화) ─────────────
 var skill_passive = null
 var skill_q       = null
@@ -168,24 +170,10 @@ func play_airborne_visual(duration: float) -> void:
 ## 검사자 패시브(리바이브 트릭컬) 발동 시 텍스트 대신 재생하는 빛무리 파티클.
 ## 자식 노드라 player.position(카메라 추종)을 그대로 따라간다.
 func play_revive_light_burst(duration: float) -> void:
-	var p := CPUParticles2D.new()
-	p.name = "ReviveLightBurst"
+	var p: CPUParticles2D = ReviveLightBurstScene.instantiate() as CPUParticles2D
 	p.position = Vector2(rect.size) / 2.0
-	p.z_index = 5
-	p.amount = 48
-	p.lifetime = 0.9
-	p.explosiveness = 0.15
-	p.one_shot = false
-	p.emitting = true
-	p.direction = Vector2.UP
-	p.spread = 180.0
-	p.gravity = Vector2(0.0, -60.0)
-	p.initial_velocity_min = 40.0
-	p.initial_velocity_max = 130.0
-	p.scale_amount_min = 2.0
-	p.scale_amount_max = 4.5
-	p.color = Color(1.0, 0.96, 0.66, 0.95)
 	add_child(p)
+	p.emitting = true
 
 	var stop_timer := get_tree().create_timer(maxf(0.1, duration))
 	stop_timer.timeout.connect(func():
@@ -377,8 +365,8 @@ func start_basic_swing() -> void:
 # 새로 판정한다. 다비처럼 패시브로 사거리가 수시로 바뀌는 직업도 하드코딩된
 # 직업 분기 없이 자동으로 대응된다 (attack_range < MELEE_RANGE_THRESHOLD → 근거리).
 # ═══════════════════════════════════════════════════════════════════════════
-const MeleeHitboxScript      := preload("res://scripts/melee_hitbox.gd")
-const RangedProjectileScript := preload("res://scripts/ranged_projectile.gd")
+const MeleeHitboxScene      := preload("res://scenes/objects/melee_hitbox.tscn")
+const RangedProjectileScene := preload("res://scenes/objects/ranged_projectile.tscn")
 
 const MELEE_RANGE_THRESHOLD := 140.0  ## 이 값 미만이면 근거리, 이상이면 원거리
 const RANGED_PROJ_SPEED     := 640.0  ## 원거리 발사체 속도 (px/s)
@@ -434,9 +422,7 @@ func _start_melee_attack(dir: Vector2) -> void:
 	# 히트박스가 살아있는 시간을 기존 대비 절반으로 감소(0.4/0.05/0.5 → 0.2/0.025/0.25).
 	var swing_duration := clampf(attack_cd * 0.2, 0.025, 0.25)
 
-	var hb := Area2D.new()
-	hb.name = "MeleeHitbox"
-	hb.set_script(MeleeHitboxScript)
+	var hb: Area2D = MeleeHitboxScene.instantiate() as Area2D
 	add_child(hb)
 	# 히트박스의 '시작점'이 캐릭터 중심(로컬 rect 중심)에 오도록 배치, 회전은 마우스 방향
 	hb.position = Vector2(rect.size) / 2.0
@@ -456,9 +442,7 @@ func _on_melee_hit(target: Node2D) -> void:
 	basic_attack_hit.emit(target, attack, _current_basic_dmg_types())
 
 func _start_ranged_attack(origin: Vector2, dir: Vector2) -> void:
-	var proj := Area2D.new()
-	proj.name = "RangedAttackProjectile"
-	proj.set_script(RangedProjectileScript)
+	var proj: Area2D = RangedProjectileScene.instantiate() as Area2D
 	if scene_ref != null: scene_ref.add_child(proj)
 	else: add_child(proj)
 	proj.setup(self, scene_ref, origin, dir, RANGED_PROJ_SPEED,

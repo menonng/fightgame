@@ -2,13 +2,15 @@
 # Plains 맵, 검사자·바람궁수·다비·쇼블러, 훈련 더미
 extends Node2D
 
-const PlayerScript  := preload("res://scripts/player.gd")
-const DummyScript   := preload("res://scripts/dummy.gd")
-const ProjScript    := preload("res://scripts/projectile.gd")
-const SwordScript   := preload("res://scripts/sword_slam.gd")
-const ChipScript    := preload("res://scripts/chip_projectile.gd")
-const DirtScript    := preload("res://scripts/dirt_particle.gd")
-const TombScript    := preload("res://scripts/tombstone.gd")
+## 런타임에 스폰되는 오브젝트는 Node.new()+set_script() 대신 씬(.tscn)을
+## instantiate()해 생성한다 — Godot의 표준 씬 인스턴싱 방식.
+const PlayerScene := preload("res://scenes/objects/player.tscn")
+const DummyScene  := preload("res://scenes/objects/dummy.tscn")
+const ProjScene   := preload("res://scenes/objects/projectile.tscn")
+const SwordScene  := preload("res://scenes/objects/sword_slam.tscn")
+const ChipScene   := preload("res://scenes/objects/chip_projectile.tscn")
+const DirtScene   := preload("res://scenes/objects/dirt_particle.tscn")
+const TombScene   := preload("res://scenes/objects/tombstone.tscn")
 # ── 직업 스킬 스크립트
 # 직업별 스킬은 player.skill_passive / skill_q / skill_e / skill_r 인스턴스로 접근
 
@@ -105,23 +107,17 @@ func _ready() -> void:
 	_font = ThemeDB.fallback_font
 	_build_map()
 
-	_map_draw = Node2D.new()
-	_map_draw.name = "MapDraw"
-	_map_draw.z_index = -2
-	add_child(_map_draw)
+	# 맵/흙무덤/HUD 레이어는 재사용되지 않는 game.tscn 고유의 구조적 자식이므로,
+	# 런타임에 new()로 조립하는 대신 씬 파일에 직접 노드로 저작해두고 고유 이름으로 찾는다.
+	# z_index는 씬 트리 순서만으로는 보장되지 않아 씬에 명시적으로 지정해뒀다:
+	# 맵(-2) < 흙무덤(-1) < 캐릭터/이펙트(기본값 0).
+	_map_draw = %MapDraw as Node2D
 	_map_draw.draw.connect(_draw_map)
 
-	# 씬 트리 순서만으로는 다른 노드가 z_index를 건드릴 경우 순서 보장이 깨질 수 있어
-	# z_index를 명시적으로 지정한다: 맵(-2) < 흙무덤(-1) < 캐릭터/이펙트(기본값 0).
-	_burial_draw = Node2D.new()
-	_burial_draw.name = "BurialDraw"
-	_burial_draw.z_index = -1
-	add_child(_burial_draw)
+	_burial_draw = %BurialDraw as Node2D
 	_burial_draw.draw.connect(_draw_burial_mounds)
 
-	player = Node2D.new()
-	player.name = "Player"
-	player.set_script(PlayerScript)
+	player = PlayerScene.instantiate() as Node2D
 	add_child(player)
 	var job: Dictionary = Global.JOBS.get(Global.selected_job, Global.JOBS["swordsman"])
 	player.setup(job, 160, WORLD_H - 80 - 60, "blue", true)
@@ -133,21 +129,12 @@ func _ready() -> void:
 	if job.get("key") == "darby":
 		_darby_roll_stats(player, true)
 
-	dummy = Node2D.new()
-	dummy.name = "TrainingDummy"
-	dummy.set_script(DummyScript)
+	dummy = DummyScene.instantiate() as Node2D
 	add_child(dummy)
 	dummy.setup(900, WORLD_H - 80 - 48)
 
-	_hud_layer = CanvasLayer.new()
-	_hud_layer.name = "HudLayer"
-	_hud_layer.layer = 10
-	add_child(_hud_layer)
-	_hud = Control.new()
-	_hud.name = "HudDraw"
-	_hud.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hud_layer.add_child(_hud)
+	_hud_layer = %HudLayer as CanvasLayer
+	_hud = %HudDraw as Control
 	_hud.draw.connect(_draw_hud)
 
 ## 탑다운 평면 맵 — 기존 플랫폼/사다리/점프패드를 전부 제거하고
@@ -330,18 +317,15 @@ func _apply_shovel_stack(owner, target, by_dust: bool = false, trigger_bury: boo
 # ── Darby 헬퍼 ────────────────────────────────────────────────────────────────
 ## DB_Passive에서 호출하는 rise fx 생성 헬퍼 (scene 참조가 필요해 game_scene에 둠)
 func _darby_spawn_rise_fx(p) -> void:
-	var rise := Node2D.new()
+	var rise: Node2D = ChipScene.instantiate() as Node2D
 	rise.name = "ChipRise"
-	rise.set_script(ChipScript)
 	add_child(rise)
 	rise.setup_rise(float(p.rect.get_center().x), float(p.rect.position.y), Global.random_palette_color())
 	chip_rise_fx.append(rise)
 
 ## DB_Q에서 호출하는 칩 생성 헬퍼
 func _darby_spawn_chip(p, tgt, spd: float, dmg: float) -> void:
-	var chip := Node2D.new()
-	chip.name = "ChipProjectile"
-	chip.set_script(ChipScript)
+	var chip: Node2D = ChipScene.instantiate() as Node2D
 	add_child(chip)
 	chip.setup_chip(float(p.rect.get_center().x), float(p.rect.get_center().y) - 10.0,
 		tgt, spd, dmg, Global.random_palette_color(), p, p.job.get("q_dmg", ["physical"]))
@@ -363,9 +347,7 @@ func _darby_q_update(p, dt: float) -> void:
 		q["left"] = int(q["left"]) - 1
 		var tgt = q["target"]
 		if tgt != null and is_instance_valid(tgt):
-			var chip := Node2D.new()
-			chip.name = "ChipProjectile"
-			chip.set_script(ChipScript)
+			var chip: Node2D = ChipScene.instantiate() as Node2D
 			add_child(chip)
 			chip.setup_chip(float(p.rect.get_center().x), float(p.rect.get_center().y) - 10.0,
 				tgt, float(q["speed"]), float(q["damage"]),
@@ -492,9 +474,7 @@ func _press_q() -> void:
 			if player.skill_q != null and player.skill_q.can_use(player):
 				var spawn_list: Array = player.skill_q.get_spawn_list(player)
 				for sp in spawn_list:
-					var d := Node2D.new()
-					d.name = "DirtParticle"
-					d.set_script(DirtScript)
+					var d: Node2D = DirtScene.instantiate() as Node2D
 					add_child(d)
 					d.setup(float(sp["wx"]), float(sp["wy"]), float(sp["vx"]), float(sp["vy"]), player)
 					dirt_particles.append(d)
@@ -507,9 +487,7 @@ func _press_e() -> void:
 			if player.skill_e != null and player.skill_e.can_use(player):
 				var mouse_world := get_viewport().get_mouse_position() + Vector2(cam_x, cam_y)
 				var target_pos: Vector2 = player.skill_e.get_target_pos(player, mouse_world)
-				var fx := Node2D.new()
-				fx.name = "SwordSlam"
-				fx.set_script(SwordScript)
+				var fx: Node2D = SwordScene.instantiate() as Node2D
 				add_child(fx)
 				fx.owner_node = player; fx.dmg_types = player.job.get("e_dmg", ["physical"])
 				fx.setup(target_pos, player, player.skill_e.slam_radius,
@@ -534,9 +512,7 @@ func _press_e() -> void:
 					var kb_dir: Vector2 = Vector2(dummy.rect.get_center()) - tomb_ctr
 					if kb_dir.length() < 0.01: kb_dir = Vector2(player.aim_dir)
 					player.skill_e.apply_knockback_on_hit(dummy, kb_dir)
-				var tomb := Node2D.new()
-				tomb.name = "Tombstone"
-				tomb.set_script(TombScript)
+				var tomb: Node2D = TombScene.instantiate() as Node2D
 				add_child(tomb)
 				tomb.setup(sp["rect"], float(sp["start_y"]), float(sp["target_y"]))
 				tombstones.append(tomb)
@@ -551,9 +527,7 @@ func _press_r() -> void:
 		"wind_archer":
 			if player.skill_r != null and player.skill_r.can_use(player):
 				var sp: Dictionary = player.skill_r.get_spawn_params(player)
-				var proj := Node2D.new()
-				proj.name = "WindUltArrow"
-				proj.set_script(ProjScript)
+				var proj: Node2D = ProjScene.instantiate() as Node2D
 				add_child(proj)
 				proj.setup_directional(
 					float(sp["world_x"]), float(sp["world_y"]),
