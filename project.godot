@@ -7,7 +7,7 @@ run/main_scene="res://scenes/menu.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 
 [autoload]
-Global="*res://scripts/global.gd"
+Global="*res://scripts/autoload/global.gd"
 
 [display]
 window/size/viewport_width=1280

@@ -1,7 +1,8 @@
 # ranged_projectile.gd — 사거리 기반 평타 시스템: 원거리(사거리 >= 70) 발사체
-# player.gd가 인스턴스화하여 scene_ref(게임 씬)의 자식으로 추가한다. 카메라가 매
-# 프레임 이동하는 이 프로젝트 구조에 맞춰, 자신의 월드 좌표(_world_pos)를 직접
-# 추적하고 scene_ref의 카메라 오프셋(cam_x/cam_y)을 읽어 화면 좌표로 변환한다.
+# scenes/objects/ranged_projectile.tscn을 player.gd가 instantiate()해 scene_ref(게임 씬)의
+# 자식으로 추가한다. 카메라가 매 프레임 이동하는 이 프로젝트 구조에 맞춰, 자신의 월드
+# 좌표(_world_pos)를 직접 추적하고 scene_ref의 카메라 오프셋(cam_x/cam_y)을 읽어 화면
+# 좌표로 변환한다. CollisionShape2D/CircleShape2D는 씬에 미리 저작되어 있다(동적 생성 없음).
 class_name RangedAttackProjectile
 extends Area2D
 
@@ -31,12 +32,6 @@ func setup(p_owner: Node2D, p_scene: Node2D, p_world_pos: Vector2, p_dir: Vector
 	_dir       = p_dir.normalized() if p_dir.length() > 0.0 else Vector2.RIGHT
 	_speed     = p_speed; damage = p_damage; _max_range = p_max_range; dmg_types = p_types
 	_hit_targets.clear()
-
-	var shape := CircleShape2D.new()
-	shape.radius = RADIUS
-	var col := CollisionShape2D.new()
-	col.shape = shape
-	add_child(col)
 
 	monitoring  = true
 	monitorable = false

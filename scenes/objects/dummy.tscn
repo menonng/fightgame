@@ -1,4 +1,19 @@
-[gd_scene load_steps=2 format=3]
-[ext_resource type="Script" path="res://scripts/dummy.gd" id="1"]
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/entities/dummy.gd" id="1"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_dummy"]
+size = Vector2(34, 48)
+
 [node name="TrainingDummy" type="Node2D"]
 script = ExtResource("1")
+
+[node name="Hurtbox" type="Area2D" parent="."]
+collision_layer = 2
+collision_mask = 0
+monitoring = false
+monitorable = true
+position = Vector2(17, 24)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Hurtbox"]
+shape = SubResource("RectangleShape2D_dummy")

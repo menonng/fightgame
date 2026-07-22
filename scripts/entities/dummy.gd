@@ -38,30 +38,17 @@ var total_damage_taken: float = 0.0
 var last_damage: float        = 0.0
 var last_damage_t: float      = 0.0
 
-var _hurtbox: Area2D = null   ## 사거리 기반 평타 시스템(melee_hitbox.gd / ranged_projectile.gd)의 피격 판정 대상
+## 사거리 기반 평타 시스템(melee_hitbox.gd / ranged_projectile.gd)의 피격 판정 대상.
+## Area2D 기반 피격 판정 — 평타 히트박스/발사체가 area_entered로 감지한다.
+## scenes/objects/dummy.tscn에 미리 저작되어 있다(동적 생성 없음). 더미 크기(34x48)는
+## 고정값이라 CollisionShape2D 크기도 씬에 고정으로 들어가 있다.
+## project.godot [layer_names] 2d_physics/layer_2 = "Hurtbox"
+@onready var _hurtbox: Area2D = $Hurtbox
 
 func setup(sx: int, sy: int) -> void:
 	rect = Rect2i(sx, sy, 34, 48); position = Vector2(rect.position)
 	status = StatusEffectManager.new()
 	status.bind(self)
-	_setup_hurtbox()
-
-## Area2D 기반 피격 판정 — 평타 히트박스/발사체가 area_entered로 감지한다.
-## project.godot [layer_names] 2d_physics/layer_2 = "Hurtbox"
-func _setup_hurtbox() -> void:
-	_hurtbox = Area2D.new()
-	_hurtbox.name = "Hurtbox"
-	_hurtbox.monitoring  = false
-	_hurtbox.monitorable = true
-	_hurtbox.collision_layer = 2
-	_hurtbox.collision_mask  = 0
-	var shape := RectangleShape2D.new()
-	shape.size = Vector2(rect.size)
-	var col := CollisionShape2D.new()
-	col.shape = shape
-	col.position = Vector2(rect.size) / 2.0   # rect 원점(좌상단) 기준 중심으로 정렬
-	_hurtbox.add_child(col)
-	add_child(_hurtbox)
 
 func center() -> Vector2:
 	return Vector2(rect.get_center())
