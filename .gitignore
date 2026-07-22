@@ -1,0 +1,17 @@
+# Godot 4 editor-local cache/import artifacts — never part of the source tree.
+# 이 폴더(특히 global_script_class_cache.cfg / uid_cache.bin)가 스크립트 이동/이름변경
+# 이후에도 예전 경로를 기억해 "hides a global script class" 오류를 일으킬 수 있다.
+# 이런 증상이 보이면 .godot/ 를 통째로 지우고 프로젝트를 다시 열어 새로 스캔하게 하면 된다.
+.godot/
+.import/
+export.cfg
+export_credentials.cfg
+
+# Godot 내보내기(export) 산출물
+*.pck
+*.exe
+*.pdb
+*.app
+
+# OS/editor 잡동사니
+.DS_Store
