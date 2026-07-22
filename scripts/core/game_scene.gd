@@ -264,9 +264,9 @@ func _assign_tile_variants() -> void:
 	for i in range(_tile_grid.size()):
 		var t: int = _tile_grid[i]
 		if t == TileType.FLOOR:
-			_tile_variant[i] = rng.randi_range(0, maxi(0, _floor_def.tileset_colors.size() - 1))
+			_tile_variant[i] = rng.randi_range(0, maxi(0, _floor_def.variant_count() - 1))
 		elif t == TileType.BUSH:
-			_tile_variant[i] = rng.randi_range(0, maxi(0, _bush_def.tileset_colors.size() - 1))
+			_tile_variant[i] = rng.randi_range(0, maxi(0, _bush_def.variant_count() - 1))
 		else:
 			_tile_variant[i] = -1
 
@@ -749,9 +749,12 @@ func _draw_map() -> void:
 			if t == TileType.WALL: continue
 			var variant: int = _tile_variant[idx]
 			var def: MapTileDef = _floor_def if t == TileType.FLOOR else _bush_def
-			var cell_color: Color = def.tileset_colors[variant]
 			var cell := Rect2i(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-			_map_draw.draw_rect(_ws(cell), cell_color)
+			if variant < def.tileset_textures.size() and def.tileset_textures[variant] != null:
+				# 업로드된 32x32 이미지를 크기 그대로(TILE_SIZE와 정확히 일치) 그린다 — 늘리지 않음.
+				_map_draw.draw_texture_rect(def.tileset_textures[variant], _ws(cell), false)
+			else:
+				_map_draw.draw_rect(_ws(cell), def.tileset_colors[variant])
 	# 경계 벽 — 병합된 사각형
 	for r in map_solids:
 		_map_draw.draw_rect(_ws(r), _wall_def.tileset_colors[0])
