@@ -41,6 +41,14 @@ var _wall_def: MapTileDef  = null
 var _tile_grid: Array = []      ## flat Array[int] (TileType 값), 크기 MAP_COLS*MAP_ROWS
 var _tile_variant: Array = []   ## flat Array[int], FLOOR/BUSH 타일의 타일셋 인덱스(WALL은 -1)
 
+## 바닥/부쉬는 매 프레임 draw_texture_rect()로 찍는 대신 실제 TileMapLayer 노드(씬에 미리
+## 저작됨, res://resources/map/terrain_tileset.tres 사용)에 셀 데이터로 한 번만 채워넣는다.
+## _floor_source_ids[i]/_bush_source_ids[i] = MapTileDef.tileset_textures[i]와 같은 텍스처를
+## 쓰는 TileSet source id — 인스펙터에서 tileset_textures를 바꿔도 텍스처 매칭으로 그대로 따라간다.
+var _terrain_tilemap: TileMapLayer = null
+var _floor_source_ids: Array = []
+var _bush_source_ids: Array = []
+
 # ── 엔티티 ───────────────────────────────────────────────────────────────────
 var player: Node2D  = null
 var dummy: Node2D   = null
@@ -105,17 +113,19 @@ const HUD_Q_X := 460; const HUD_P_X := 392; const HUD_E_X := 528; const HUD_R_X 
 # ─────────────────────────────────────────────────────────────────────────────
 func _ready() -> void:
 	_font = ThemeDB.fallback_font
-	_build_map()
 
-	# 맵/흙무덤/HUD 레이어는 재사용되지 않는 game.tscn 고유의 구조적 자식이므로,
-	# 런타임에 new()로 조립하는 대신 씬 파일에 직접 노드로 저작해두고 고유 이름으로 찾는다.
-	# z_index는 씬 트리 순서만으로는 보장되지 않아 씬에 명시적으로 지정해뒀다:
-	# 맵(-2) < 흙무덤(-1) < 캐릭터/이펙트(기본값 0).
+	# 지형 타일맵/맵(벽)/흙무덤/HUD 레이어는 재사용되지 않는 game.tscn 고유의 구조적
+	# 자식이므로, 런타임에 new()로 조립하는 대신 씬 파일에 직접 노드로 저작해두고
+	# 고유 이름으로 찾는다. z_index는 씬 트리 순서만으로는 보장되지 않아 씬에 명시적으로
+	# 지정해뒀다: 지형 타일맵(-3) < 맵(벽/외곽선, -2) < 흙무덤(-1) < 캐릭터/이펙트(기본값 0).
+	_terrain_tilemap = %TerrainTileMap as TileMapLayer
 	_map_draw = %MapDraw as Node2D
 	_map_draw.draw.connect(_draw_map)
 
 	_burial_draw = %BurialDraw as Node2D
 	_burial_draw.draw.connect(_draw_burial_mounds)
+
+	_build_map()
 
 	player = PlayerScene.instantiate() as Node2D
 	add_child(player)
@@ -186,6 +196,45 @@ func _build_map() -> void:
 	map_bushes = _merge_tiles_to_rects(TileType.BUSH)
 
 	_assign_tile_variants()
+
+	_floor_source_ids = _build_terrain_source_lookup(_floor_def)
+	_bush_source_ids  = _build_terrain_source_lookup(_bush_def)
+	_populate_terrain_tilemap()
+
+## def.tileset_textures[i]와 같은 Texture2D를 쓰는 TileSetAtlasSource를 찾아 그 source id를
+## 반환한다(찾지 못하면 -1). 텍스처 객체로 매칭하므로 인스펙터에서 tileset_textures 순서/개수를
+## 바꿔도 TileSet의 source id 하드코딩 없이 그대로 따라간다.
+func _build_terrain_source_lookup(def: MapTileDef) -> Array:
+	var ids: Array = []
+	var ts: TileSet = _terrain_tilemap.tile_set
+	for tex in def.tileset_textures:
+		var found_id := -1
+		if ts != null:
+			for i in range(ts.get_source_count()):
+				var sid: int = ts.get_source_id(i)
+				var src: TileSetAtlasSource = ts.get_source(sid) as TileSetAtlasSource
+				if src != null and src.texture == tex:
+					found_id = sid
+					break
+		ids.append(found_id)
+	return ids
+
+## _tile_grid/_tile_variant를 기준으로 TerrainTileMap의 셀을 한 번에 채운다(맵 생성 시 1회).
+## 벽 타일은 텍스처가 없어 여기서 건너뛰고 기존처럼 _draw_map()이 병합된 사각형으로 그린다.
+func _populate_terrain_tilemap() -> void:
+	if _terrain_tilemap == null: return
+	_terrain_tilemap.clear()
+	for row in range(MAP_ROWS):
+		for col in range(MAP_COLS):
+			var idx: int = row * MAP_COLS + col
+			var t: int = _tile_grid[idx]
+			if t == TileType.WALL: continue
+			var variant: int = _tile_variant[idx]
+			var ids: Array = _floor_source_ids if t == TileType.FLOOR else _bush_source_ids
+			if variant >= ids.size(): continue
+			var source_id: int = ids[variant]
+			if source_id < 0: continue
+			_terrain_tilemap.set_cell(Vector2i(col, row), source_id, Vector2i.ZERO)
 
 ## resources/map/{kind}_tile.tres(인스펙터에서 조정된 리소스)가 있으면 우선 사용,
 ## 없으면 코드 기본값으로 즉석 생성 — jobs/*의 .tres 우선 로드 관례와 동일한 패턴.
@@ -719,6 +768,9 @@ func _update_camera() -> void:
 	# 화면 흔들림은 렌더링 오프셋에만 더한다 — cam_x/cam_y 자체(마우스 월드 좌표 변환 등
 	# 게임플레이 로직이 참조하는 "논리적" 카메라 값)는 흔들림의 영향을 받지 않는다.
 	var off := Vector2(-cam_x, -cam_y) + _current_shake_offset()
+	# TerrainTileMap은 _ws()처럼 칸마다 오프셋을 계산하는 대신, 노드 전체를 카메라만큼
+	# 옮겨서 스크롤을 흉내낸다(_draw_map()의 벽/외곽선과 동일하게 흔들림은 적용하지 않는다).
+	_terrain_tilemap.position = Vector2(-cam_x, -cam_y)
 	player.position = Vector2(player.rect.position) + off
 	dummy.position  = Vector2(dummy.rect.position) + off
 	for proj in wind_ult_arrows:
@@ -734,33 +786,14 @@ func _update_camera() -> void:
 
 # ── 맵 렌더 ──────────────────────────────────────────────────────────────────
 func _draw_map() -> void:
-	# 바닥/부쉬 — 타일(0/1)마다 확정된 타일셋(MapTileDef.tileset_colors) 인덱스로 칠한다.
-	# 벽(2)은 여기서 건너뛰고 아래에서 병합된 사각형으로 그린다.
-	# 맵이 100x75(7500칸)로 커졌으므로, 매 프레임 전체를 순회하지 않고 화면에 보이는
-	# 범위의 타일만 순회한다(카메라 컬링) — 시야 밖 타일은 어차피 그려도 보이지 않는다.
-	var col0: int = clampi(int(cam_x) / TILE_SIZE - 1, 0, MAP_COLS - 1)
-	var col1: int = clampi(int(cam_x + SCR_W) / TILE_SIZE + 1, 0, MAP_COLS - 1)
-	var row0: int = clampi(int(cam_y) / TILE_SIZE - 1, 0, MAP_ROWS - 1)
-	var row1: int = clampi(int(cam_y + SCR_H) / TILE_SIZE + 1, 0, MAP_ROWS - 1)
-	for row in range(row0, row1 + 1):
-		for col in range(col0, col1 + 1):
-			var idx: int = row * MAP_COLS + col
-			var t: int = _tile_grid[idx]
-			if t == TileType.WALL: continue
-			var variant: int = _tile_variant[idx]
-			var def: MapTileDef = _floor_def if t == TileType.FLOOR else _bush_def
-			var cell := Rect2i(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-			if variant < def.tileset_textures.size() and def.tileset_textures[variant] != null:
-				# 업로드된 32x32 이미지를 크기 그대로(TILE_SIZE와 정확히 일치) 그린다 — 늘리지 않음.
-				_map_draw.draw_texture_rect(def.tileset_textures[variant], _ws(cell), false)
-			else:
-				_map_draw.draw_rect(_ws(cell), def.tileset_colors[variant])
-	# 경계 벽 — 병합된 사각형
+	# 바닥/부쉬 칠은 더 이상 여기서 매 프레임 그리지 않는다 — TerrainTileMap(TileMapLayer)이
+	# 실제 씬 노드로 그 역할을 담당한다(_populate_terrain_tilemap 참고, 맵 생성 시 1회만 채움).
+	# 여기서는 텍스처가 없는 벽(병합된 사각형)만 그린다.
 	for r in map_solids:
 		_map_draw.draw_rect(_ws(r), _wall_def.tileset_colors[0])
 		if _wall_def.draw_outline:
 			_map_draw.draw_rect(_ws(r), _wall_def.outline_color, false, _wall_def.outline_width)
-	# 부쉬 테두리 — 채움은 위에서 타일 단위로 이미 그렸으므로 병합 영역 외곽선만 덧그린다.
+	# 부쉬 테두리 — 채움은 TerrainTileMap이 이미 그렸으므로 병합 영역 외곽선만 덧그린다.
 	if _bush_def.draw_outline:
 		for r in map_bushes:
 			_map_draw.draw_rect(_ws(r), _bush_def.outline_color, false, _bush_def.outline_width)

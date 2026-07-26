@@ -1,0 +1,47 @@
+[gd_resource type="TileSet" load_steps=13 format=3]
+
+[ext_resource type="Texture2D" path="res://assets/map/floor1.png" id="1"]
+[ext_resource type="Texture2D" path="res://assets/map/floor2.png" id="2"]
+[ext_resource type="Texture2D" path="res://assets/map/floor3.png" id="3"]
+[ext_resource type="Texture2D" path="res://assets/map/bush1.png" id="4"]
+[ext_resource type="Texture2D" path="res://assets/map/bush2.png" id="5"]
+[ext_resource type="Texture2D" path="res://assets/map/bush3.png" id="6"]
+
+[sub_resource type="TileSetAtlasSource" id="SRC_floor1"]
+texture = ExtResource("1")
+texture_region_size = Vector2i(32, 32)
+0:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="SRC_floor2"]
+texture = ExtResource("2")
+texture_region_size = Vector2i(32, 32)
+0:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="SRC_floor3"]
+texture = ExtResource("3")
+texture_region_size = Vector2i(32, 32)
+0:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="SRC_bush1"]
+texture = ExtResource("4")
+texture_region_size = Vector2i(32, 32)
+0:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="SRC_bush2"]
+texture = ExtResource("5")
+texture_region_size = Vector2i(32, 32)
+0:0/0 = 0
+
+[sub_resource type="TileSetAtlasSource" id="SRC_bush3"]
+texture = ExtResource("6")
+texture_region_size = Vector2i(32, 32)
+0:0/0 = 0
+
+[resource]
+tile_size = Vector2i(32, 32)
+sources/0 = SubResource("SRC_floor1")
+sources/1 = SubResource("SRC_floor2")
+sources/2 = SubResource("SRC_floor3")
+sources/3 = SubResource("SRC_bush1")
+sources/4 = SubResource("SRC_bush2")
+sources/5 = SubResource("SRC_bush3")
