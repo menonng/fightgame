@@ -15,39 +15,12 @@ const TombScene   := preload("res://scenes/objects/tombstone.tscn")
 # 직업별 스킬은 player.skill_passive / skill_q / skill_e / skill_r 인스턴스로 접근
 
 # ── 맵 (탑다운 평면 — Plains → 부쉬 배치) ──────────────────────────────────────
+## 맵 생성(타일 그리드→TileMapLayer)/파묻힘 흙무덤 렌더링은 독립 서브씬
+## scenes/map/map.tscn(스크립트 scripts/map_gen/map_scene.gd)으로 분리되어 있다.
+## game.tscn이 이를 직접 인스턴싱해 넣고, game_scene은 결과(map_solids/map_bushes)를
+## _map_scene을 통해 읽고 카메라 동기화·리드로만 챙긴다.
 const WORLD_W := 3200; const WORLD_H := 2400
-var map_solids: Array = []   ## 완전 차단 지형 (경계 벽) — 병합된 Rect2i, 충돌/렌더링 그대로 사용
-var map_bushes: Array = []   ## 부쉬 — 통과 가능, 이동속도 감소 + 은신 성격 (병합된 Rect2i)
-
-# ── 맵 타일 그리드 (docs/tile_map_proposal.md 실현안 구현) ───────────────────────
-## 타일 하나당 TILE_SIZE(32)px, 3200x2400 맵 기준 100x75칸. 0/1/2 값으로 저작하고,
-## 충돌용 map_solids/map_bushes는 인접한 같은 타입 타일을 큰 사각형으로 병합해 생성한다
-## (기존 충돌/렌더링 코드 무변경). 각 타일의 속성은 (a)타일 종류(0/1/2)와 (b)그 종류의
-## 디자인(타일셋/팔레트) 두 가지이며, 둘 다 MapTileDef 리소스(resources/map/*.tres)로
-## 분리해 인스펙터에서 조정할 수 있다. 0(바닥)/1(부쉬) 타일은 그 타일셋 중 하나를 난수로
-## 배정해 "확정"(고정 시드로 결정론적, 프레임마다 재계산되지 않음)한다.
-const TILE_SIZE := 32
-const MAP_COLS := 100   # WORLD_W / TILE_SIZE (3200/32, 나머지 없음)
-const MAP_ROWS := 75    # WORLD_H / TILE_SIZE (2400/32, 나머지 없음)
-const WALL_TILES := 2   ## 경계벽 두께(타일 단위) — 그리드에 맞춰 정수 타일로 정의
-enum TileType { FLOOR = 0, BUSH = 1, WALL = 2 }
-
-const MAP_RNG_SEED := 7007   ## 맵을 '확정'하는 고정 시드 — 실행할 때마다 같은 결과 재현
-
-var _floor_def: MapTileDef = null
-var _bush_def: MapTileDef  = null
-var _wall_def: MapTileDef  = null
-
-var _tile_grid: Array = []      ## flat Array[int] (TileType 값), 크기 MAP_COLS*MAP_ROWS
-var _tile_variant: Array = []   ## flat Array[int], FLOOR/BUSH 타일의 타일셋 인덱스(WALL은 -1)
-
-## 바닥/부쉬는 매 프레임 draw_texture_rect()로 찍는 대신 실제 TileMapLayer 노드(씬에 미리
-## 저작됨, res://resources/map/terrain_tileset.tres 사용)에 셀 데이터로 한 번만 채워넣는다.
-## _floor_source_ids[i]/_bush_source_ids[i] = MapTileDef.tileset_textures[i]와 같은 텍스처를
-## 쓰는 TileSet source id — 인스펙터에서 tileset_textures를 바꿔도 텍스처 매칭으로 그대로 따라간다.
-var _terrain_tilemap: TileMapLayer = null
-var _floor_source_ids: Array = []
-var _bush_source_ids: Array = []
+var _map_scene: MapScene = null
 
 # ── 엔티티 ───────────────────────────────────────────────────────────────────
 var player: Node2D  = null
@@ -66,11 +39,6 @@ var tombstones:      Array = []   # Tombstone nodes
 var targeting_active: bool  = false
 var targeting_radius: float = 150.0
 var targeting_timer: float  = 0.0
-
-# ── 툴팁 상태 ─────────────────────────────────────────────────────────────────
-var _tooltip_lines: Array   = []   # [title, desc]
-var _tooltip_pos: Vector2   = Vector2.ZERO
-var _tooltip_visible: bool  = false
 
 # ── 피해 텍스트 ───────────────────────────────────────────────────────────────
 var dmg_texts: Array = []   # [{text,wx,wy,t}]
@@ -100,32 +68,14 @@ const INPUT_BUFFER_WINDOW := 0.1   ## 행동 잠금 종료 직전 이 구간 안
 var _buffered_action: String = ""  ## "" | "attack" | "q" | "e" | "r"
 
 # ── 노드 ─────────────────────────────────────────────────────────────────────
-var _map_draw: Node2D     = null
-var _burial_draw: Node2D  = null   ## 파묻힘 흙무덤 전용 공용 레이어 — 맵 바로 위, 모든 캐릭터/요소보다 아래
-var _hud_layer: CanvasLayer = null
-var _hud: Control         = null
-var _font: Font           = null
-
-# HUD 레이아웃 상수 (원본 _build_ui() 그대로)
-const HUD_Y   := 640; const HUD_SZ := 54; const HUD_GAP := 14
-const HUD_Q_X := 460; const HUD_P_X := 392; const HUD_E_X := 528; const HUD_R_X := 596
+var _hud_scene: HudScene = null
 
 # ─────────────────────────────────────────────────────────────────────────────
 func _ready() -> void:
-	_font = ThemeDB.fallback_font
-
-	# 지형 타일맵/맵(벽)/흙무덤/HUD 레이어는 재사용되지 않는 game.tscn 고유의 구조적
-	# 자식이므로, 런타임에 new()로 조립하는 대신 씬 파일에 직접 노드로 저작해두고
-	# 고유 이름으로 찾는다. z_index는 씬 트리 순서만으로는 보장되지 않아 씬에 명시적으로
-	# 지정해뒀다: 지형 타일맵(-3) < 맵(벽/외곽선, -2) < 흙무덤(-1) < 캐릭터/이펙트(기본값 0).
-	_terrain_tilemap = %TerrainTileMap as TileMapLayer
-	_map_draw = %MapDraw as Node2D
-	_map_draw.draw.connect(_draw_map)
-
-	_burial_draw = %BurialDraw as Node2D
-	_burial_draw.draw.connect(_draw_burial_mounds)
-
-	_build_map()
+	# 맵/HUD는 각각 독립 서브씬(scenes/map/map.tscn, scenes/ui/hud.tscn)으로 game.tscn에
+	# 직접 인스턴싱되어 있다 — 런타임에 new()로 조립하는 대신 고유 이름으로 찾아 참조만 쥔다.
+	_map_scene = %MapScene as MapScene
+	_hud_scene = %HudScene as HudScene
 
 	player = PlayerScene.instantiate() as Node2D
 	add_child(player)
@@ -143,181 +93,8 @@ func _ready() -> void:
 	add_child(dummy)
 	dummy.setup(900, WORLD_H - 80 - 48)
 
-	_hud_layer = %HudLayer as CanvasLayer
-	_hud = %HudDraw as Control
-	_hud.draw.connect(_draw_hud)
-
-## 탑다운 평면 맵 — 기존 플랫폼/사다리/점프패드를 전부 제거하고
-## 사방 경계 벽 + 부쉬(엄폐 지형) 배치로 대체.
-## 벽/부쉬 배치를 타일 그리드(0=바닥/1=부쉬/2=벽)에 찍은 뒤, 인접한 같은 타입 타일을
-## 병합(greedy merge)해 map_solids/map_bushes를 만든다 — 결과는 기존과 동일한 "개수
-## 적은 Rect2i 배열"이라 충돌/렌더링 쪽 코드는 그대로 두고 여기만 교체하면 된다.
-func _build_map() -> void:
-	_floor_def = _load_tile_def("floor")
-	_bush_def  = _load_tile_def("bush")
-	_wall_def  = _load_tile_def("wall")
-
-	var wall_px: int = WALL_TILES * TILE_SIZE
-	var wall_rects: Array = [
-		Rect2i(0, 0, WORLD_W, wall_px),                       # 위쪽 벽
-		Rect2i(0, WORLD_H - wall_px, WORLD_W, wall_px),       # 아래쪽 벽
-		Rect2i(0, 0, wall_px, WORLD_H),                       # 왼쪽 벽
-		Rect2i(WORLD_W - wall_px, 0, wall_px, WORLD_H),       # 오른쪽 벽
-	]
-
-	# 기존(2100x1400 기준) 부쉬 배치를 새 맵 크기(3200x2400)에 비례 확대해 재현한다.
-	# _stamp_tile_rect가 픽셀→타일 인덱스 변환(정수 나눗셈)을 하므로 별도 반올림 없이
-	# 그대로 넘겨도 자동으로 격자에 맞춰진다.
-	const OLD_WORLD_W := 2100.0
-	const OLD_WORLD_H := 1400.0
-	var scale_x: float = float(WORLD_W) / OLD_WORLD_W
-	var scale_y: float = float(WORLD_H) / OLD_WORLD_H
-	var old_bush_rects: Array = [
-		Rect2i(300, 300, 220, 180), Rect2i(760, 220, 260, 200),
-		Rect2i(1300, 340, 240, 190), Rect2i(1680, 260, 220, 180),
-		Rect2i(400, 700, 260, 220), Rect2i(900, 780, 300, 220),
-		Rect2i(1450, 720, 240, 200), Rect2i(650, 1080, 260, 200),
-		Rect2i(1200, 1120, 280, 200), Rect2i(180, 1000, 200, 180),
-	]
-	var bush_rects: Array = []
-	for r in old_bush_rects:
-		var ri: Rect2i = r
-		bush_rects.append(Rect2i(
-			int(float(ri.position.x) * scale_x), int(float(ri.position.y) * scale_y),
-			int(float(ri.size.x) * scale_x), int(float(ri.size.y) * scale_y)))
-
-	_tile_grid = []
-	_tile_grid.resize(MAP_COLS * MAP_ROWS)
-	for i in range(_tile_grid.size()): _tile_grid[i] = TileType.FLOOR
-	for r in wall_rects: _stamp_tile_rect(r, TileType.WALL)
-	for r in bush_rects: _stamp_tile_rect(r, TileType.BUSH)
-
-	map_solids = _merge_tiles_to_rects(TileType.WALL)
-	map_bushes = _merge_tiles_to_rects(TileType.BUSH)
-
-	_assign_tile_variants()
-
-	_floor_source_ids = _build_terrain_source_lookup(_floor_def)
-	_bush_source_ids  = _build_terrain_source_lookup(_bush_def)
-	_populate_terrain_tilemap()
-
-## def.tileset_textures[i]와 같은 Texture2D를 쓰는 TileSetAtlasSource를 찾아 그 source id를
-## 반환한다(찾지 못하면 -1). 텍스처 객체로 매칭하므로 인스펙터에서 tileset_textures 순서/개수를
-## 바꿔도 TileSet의 source id 하드코딩 없이 그대로 따라간다.
-func _build_terrain_source_lookup(def: MapTileDef) -> Array:
-	var ids: Array = []
-	var ts: TileSet = _terrain_tilemap.tile_set
-	for tex in def.tileset_textures:
-		var found_id := -1
-		if ts != null:
-			for i in range(ts.get_source_count()):
-				var sid: int = ts.get_source_id(i)
-				var src: TileSetAtlasSource = ts.get_source(sid) as TileSetAtlasSource
-				if src != null and src.texture == tex:
-					found_id = sid
-					break
-		ids.append(found_id)
-	return ids
-
-## _tile_grid/_tile_variant를 기준으로 TerrainTileMap의 셀을 한 번에 채운다(맵 생성 시 1회).
-## 벽 타일은 텍스처가 없어 여기서 건너뛰고 기존처럼 _draw_map()이 병합된 사각형으로 그린다.
-func _populate_terrain_tilemap() -> void:
-	if _terrain_tilemap == null: return
-	_terrain_tilemap.clear()
-	for row in range(MAP_ROWS):
-		for col in range(MAP_COLS):
-			var idx: int = row * MAP_COLS + col
-			var t: int = _tile_grid[idx]
-			if t == TileType.WALL: continue
-			var variant: int = _tile_variant[idx]
-			var ids: Array = _floor_source_ids if t == TileType.FLOOR else _bush_source_ids
-			if variant >= ids.size(): continue
-			var source_id: int = ids[variant]
-			if source_id < 0: continue
-			_terrain_tilemap.set_cell(Vector2i(col, row), source_id, Vector2i.ZERO)
-
-## resources/map/{kind}_tile.tres(인스펙터에서 조정된 리소스)가 있으면 우선 사용,
-## 없으면 코드 기본값으로 즉석 생성 — jobs/*의 .tres 우선 로드 관례와 동일한 패턴.
-func _load_tile_def(kind: String) -> MapTileDef:
-	var tres_path := "res://resources/map/%s_tile.tres" % kind
-	if ResourceLoader.exists(tres_path):
-		return load(tres_path)
-	var def := MapTileDef.new()
-	match kind:
-		"floor":
-			def.tile_type = TileType.FLOOR
-			def.tileset_colors = [Color(0.13, 0.16, 0.11)]
-		"bush":
-			def.tile_type = TileType.BUSH
-			def.tileset_colors = [Color(0.22, 0.45, 0.20, 0.75)]
-			def.draw_outline = true
-			def.outline_color = Color(0.14, 0.30, 0.13, 0.9)
-			def.outline_width = 2.0
-		"wall":
-			def.tile_type = TileType.WALL
-			def.tileset_colors = [Color(0.18, 0.35, 0.22)]
-			def.draw_outline = true
-			def.outline_color = Color(0.10, 0.18, 0.11)
-	return def
-
-## 픽셀 좌표 Rect2i를 타일 인덱스 범위로 변환해 그리드에 값을 채운다.
-func _stamp_tile_rect(r: Rect2i, value: int) -> void:
-	var c0: int = clampi(int(r.position.x) / TILE_SIZE, 0, MAP_COLS - 1)
-	var c1: int = clampi(int(r.position.x + r.size.x - 1) / TILE_SIZE, 0, MAP_COLS - 1)
-	var r0: int = clampi(int(r.position.y) / TILE_SIZE, 0, MAP_ROWS - 1)
-	var r1: int = clampi(int(r.position.y + r.size.y - 1) / TILE_SIZE, 0, MAP_ROWS - 1)
-	for row in range(r0, r1 + 1):
-		for col in range(c0, c1 + 1):
-			_tile_grid[row * MAP_COLS + col] = value
-
-## 같은 값의 인접 타일을 최대한 큰 사각형으로 묶는 greedy merge(2D 그리디 메싱).
-## 맵 생성 시 1회만 실행되며, 결과는 지금까지의 손코딩 Rect2i 배열과 동일한 형태다.
-func _merge_tiles_to_rects(target_value: int) -> Array:
-	var consumed: Array = []
-	consumed.resize(MAP_COLS * MAP_ROWS)
-	for i in range(consumed.size()): consumed[i] = false
-	var rects: Array = []
-	for row in range(MAP_ROWS):
-		for col in range(MAP_COLS):
-			var idx: int = row * MAP_COLS + col
-			if _tile_grid[idx] != target_value or consumed[idx]:
-				continue
-			var width: int = 1
-			while col + width < MAP_COLS \
-					and _tile_grid[row * MAP_COLS + col + width] == target_value \
-					and not consumed[row * MAP_COLS + col + width]:
-				width += 1
-			var height: int = 1
-			while row + height < MAP_ROWS and _tile_row_span_matches(row + height, col, width, target_value, consumed):
-				height += 1
-			for ry in range(row, row + height):
-				for rx in range(col, col + width):
-					consumed[ry * MAP_COLS + rx] = true
-			rects.append(Rect2i(col * TILE_SIZE, row * TILE_SIZE, width * TILE_SIZE, height * TILE_SIZE))
-	return rects
-
-func _tile_row_span_matches(row: int, col: int, width: int, target_value: int, consumed: Array) -> bool:
-	for c in range(col, col + width):
-		var idx: int = row * MAP_COLS + c
-		if _tile_grid[idx] != target_value or consumed[idx]:
-			return false
-	return true
-
-## 0(바닥)/1(부쉬) 타일마다 해당 MapTileDef.tileset_colors 중 하나를 난수로 배정해
-## 맵을 '확정'한다. 고정 시드를 쓰므로 실행할 때마다 항상 같은 배치가 재현된다.
-func _assign_tile_variants() -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = MAP_RNG_SEED
-	_tile_variant = []
-	_tile_variant.resize(_tile_grid.size())
-	for i in range(_tile_grid.size()):
-		var t: int = _tile_grid[i]
-		if t == TileType.FLOOR:
-			_tile_variant[i] = rng.randi_range(0, maxi(0, _floor_def.variant_count() - 1))
-		elif t == TileType.BUSH:
-			_tile_variant[i] = rng.randi_range(0, maxi(0, _bush_def.variant_count() - 1))
-		else:
-			_tile_variant[i] = -1
+	_map_scene.setup(player, dummy)
+	_hud_scene.setup(player, dummy)
 
 # ── 피해 헬퍼 ─────────────────────────────────────────────────────────────────
 ## is_primary_hit: 평타/Q/E/R의 단발성 직접 적중이면 true(기본값) — 궁극기 쿨감 + 히트스톱 발동.
@@ -438,7 +215,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	# 툴팁: 마우스 이동 or 버튼
 	if event is InputEventMouseMotion or event is InputEventMouseButton:
-		_update_tooltip(get_viewport().get_mouse_position())
+		_hud_scene.update_tooltip(get_viewport().get_mouse_position())
 
 # ── 선입력(Input Buffer) ─────────────────────────────────────────────────────
 ## 현재 조작 불가 상태(스윙/캐스팅 등)로 남아있는 잠금 시간 중 최댓값.
@@ -466,28 +243,6 @@ func _consume_input_buffer() -> void:
 		"q": _press_q()
 		"e": _press_e()
 		"r": _press_r()
-
-# ── 툴팁 ──────────────────────────────────────────────────────────────────────
-func _update_tooltip(mouse_pos: Vector2) -> void:
-	var job: Dictionary = player.job
-	var icons := [
-		{"rect": Rect2(HUD_P_X, HUD_Y, HUD_SZ, HUD_SZ),
-		 "lines": ["P  " + job.get("passive_name",""), job.get("passive_desc","")]},
-		{"rect": Rect2(HUD_Q_X, HUD_Y, HUD_SZ, HUD_SZ),
-		 "lines": ["Q  " + job.get("q_name",""), job.get("q_desc","")]},
-		{"rect": Rect2(HUD_E_X, HUD_Y, HUD_SZ, HUD_SZ),
-		 "lines": ["E  " + job.get("e_name",""), job.get("e_desc","")]},
-		{"rect": Rect2(HUD_R_X, HUD_Y, HUD_SZ, HUD_SZ),
-		 "lines": ["R  " + job.get("r_name",""), job.get("r_desc","")]},
-	]
-	_tooltip_visible = false
-	for ic in icons:
-		if (ic["rect"] as Rect2).has_point(mouse_pos):
-			_tooltip_lines = ic["lines"]
-			_tooltip_pos   = mouse_pos
-			_tooltip_visible = true
-			break
-	_hud.queue_redraw()
 
 # ── 기본 공격 (사거리 기반 근/원거리 시스템 — player.gd가 판정, 여기서는 피해 적용 + 직업별 후속 효과만) ──
 func _on_player_basic_attack_hit(target: Node2D, dmg: float, dmg_types: Array) -> void:
@@ -551,7 +306,7 @@ func _press_e() -> void:
 				player.skill_e.activate(player)
 		"shoveler":
 			if player.skill_e != null and player.skill_e.can_use(player):
-				var sp: Dictionary = player.skill_e.get_spawn_params(player, map_solids, WORLD_H)
+				var sp: Dictionary = player.skill_e.get_spawn_params(player, _map_scene.map_solids, WORLD_H)
 				if (sp["hit_rect"] as Rect2i).intersects(dummy.rect):
 					_deal_damage(player, dummy, float(sp["damage"]), player.job.get("e_dmg", ["physical"]))
 					if player.skill_passive != null:
@@ -634,8 +389,8 @@ func _process(dt: float) -> void:
 
 	# 플레이어 입력·이동
 	if not player.dead and not player.revive_active:
-		player.handle_input(dt, map_solids, map_bushes)
-	player.move_and_collide_map(dt, map_solids, map_bushes, WORLD_W, WORLD_H)
+		player.handle_input(dt, _map_scene.map_solids, _map_scene.map_bushes)
+	player.move_and_collide_map(dt, _map_scene.map_solids, _map_scene.map_bushes, WORLD_W, WORLD_H)
 	player.player_update(dt)
 
 	# 선입력 소비 — 이번 프레임에 행동 잠금이 막 풀렸다면 버퍼된 입력을 지연 없이 실행
@@ -661,7 +416,7 @@ func _process(dt: float) -> void:
 		if player.job.get("key") == "darby": _darby_roll_stats(player, true)
 
 	# 더미 물리
-	dummy.dummy_update(dt, map_solids, map_bushes)
+	dummy.dummy_update(dt, _map_scene.map_solids, _map_scene.map_bushes)
 
 	# 바람궁수 R 화살
 	for proj in wind_ult_arrows.duplicate():
@@ -727,7 +482,7 @@ func _process(dt: float) -> void:
 
 	# Dirt 파티클 (Shoveler Q)
 	for d in dirt_particles.duplicate():
-		d.proj_update(dt, map_solids, map_bushes)
+		d.proj_update(dt, _map_scene.map_solids, _map_scene.map_bushes)
 		if d.alive and d.collides_rect(dummy.rect):
 			if player.skill_passive != null:
 				player.skill_passive.apply_slow(dummy)
@@ -737,11 +492,11 @@ func _process(dt: float) -> void:
 	# Tombstone (Shoveler E)
 	for tomb in tombstones.duplicate():
 		var just_solid: bool = tomb.tomb_update(dt)
-		if just_solid and not (tomb.world_rect in map_solids):
-			map_solids.append(tomb.world_rect)
+		if just_solid and not (tomb.world_rect in _map_scene.map_solids):
+			_map_scene.map_solids.append(tomb.world_rect)
 		tomb.position = Vector2(tomb.world_rect.position) + Vector2(-cam_x, -cam_y)
 		if not tomb.alive:
-			map_solids.erase(tomb.world_rect)
+			_map_scene.map_solids.erase(tomb.world_rect)
 			tomb.queue_free(); tombstones.erase(tomb)
 
 	# 피해 텍스트
@@ -752,10 +507,10 @@ func _process(dt: float) -> void:
 	dmg_texts = kept
 
 	_update_camera()
-	_map_draw.queue_redraw()
-	_burial_draw.queue_redraw()
+	_map_scene.redraw()
 	player.queue_redraw(); dummy.queue_redraw()
-	_hud.queue_redraw()
+	_hud_scene.sync_frame(cam_x, cam_y, targeting_active, targeting_radius, dmg_texts)
+	_hud_scene.redraw()
 
 # ── 카메라 ────────────────────────────────────────────────────────────────────
 func _current_shake_offset() -> Vector2:
@@ -768,9 +523,7 @@ func _update_camera() -> void:
 	# 화면 흔들림은 렌더링 오프셋에만 더한다 — cam_x/cam_y 자체(마우스 월드 좌표 변환 등
 	# 게임플레이 로직이 참조하는 "논리적" 카메라 값)는 흔들림의 영향을 받지 않는다.
 	var off := Vector2(-cam_x, -cam_y) + _current_shake_offset()
-	# TerrainTileMap은 _ws()처럼 칸마다 오프셋을 계산하는 대신, 노드 전체를 카메라만큼
-	# 옮겨서 스크롤을 흉내낸다(_draw_map()의 벽/외곽선과 동일하게 흔들림은 적용하지 않는다).
-	_terrain_tilemap.position = Vector2(-cam_x, -cam_y)
+	_map_scene.sync_camera(cam_x, cam_y)
 	player.position = Vector2(player.rect.position) + off
 	dummy.position  = Vector2(dummy.rect.position) + off
 	for proj in wind_ult_arrows:
@@ -783,275 +536,3 @@ func _update_camera() -> void:
 		if is_instance_valid(d): d.position = d._world_pos + off
 	for fx in sword_effects:
 		if is_instance_valid(fx): fx.position = fx.target_pos + off
-
-# ── 맵 렌더 ──────────────────────────────────────────────────────────────────
-func _draw_map() -> void:
-	# 바닥/부쉬 칠은 더 이상 여기서 매 프레임 그리지 않는다 — TerrainTileMap(TileMapLayer)이
-	# 실제 씬 노드로 그 역할을 담당한다(_populate_terrain_tilemap 참고, 맵 생성 시 1회만 채움).
-	# 여기서는 텍스처가 없는 벽(병합된 사각형)만 그린다.
-	for r in map_solids:
-		_map_draw.draw_rect(_ws(r), _wall_def.tileset_colors[0])
-		if _wall_def.draw_outline:
-			_map_draw.draw_rect(_ws(r), _wall_def.outline_color, false, _wall_def.outline_width)
-	# 부쉬 테두리 — 채움은 TerrainTileMap이 이미 그렸으므로 병합 영역 외곽선만 덧그린다.
-	if _bush_def.draw_outline:
-		for r in map_bushes:
-			_map_draw.draw_rect(_ws(r), _bush_def.outline_color, false, _bush_def.outline_width)
-
-func _ws(r) -> Rect2:
-	return Rect2(r.position.x - cam_x, r.position.y - cam_y, r.size.x, r.size.y)
-
-# ── 파묻힘 흙무덤 (공용 지면 레이어 — 맵 바로 위, 모든 캐릭터/요소보다 아래) ──────
-func _draw_burial_mounds() -> void:
-	if player.is_buried():
-		var ground := Vector2(player.rect.position.x + player.rect.size.x / 2.0,
-			player.rect.position.y + player.rect.size.y)
-		_draw_one_burial_mound(ground, float(player.SPR_W))
-	if dummy.is_buried():
-		var ground := Vector2(dummy.rect.position.x + dummy.rect.size.x / 2.0,
-			dummy.rect.position.y + dummy.rect.size.y)
-		_draw_one_burial_mound(ground, float(dummy.rect.size.x) * 1.7)
-
-func _draw_one_burial_mound(world_ground: Vector2, width_ref: float) -> void:
-	var screen_pt := world_ground - Vector2(cam_x, cam_y)
-	var dirt_dark := Color(0.145, 0.094, 0.047, 1.0)
-	var dirt_light := Color(0.267, 0.176, 0.098, 1.0)
-	var mound_r := width_ref * 0.62
-	_burial_draw.draw_rect(Rect2(screen_pt.x - mound_r - 20.0, screen_pt.y - 6.0, mound_r * 2.0 + 40.0, 160.0), dirt_dark)
-	_burial_draw.draw_set_transform(Vector2(screen_pt.x, screen_pt.y - 6.0), 0.0, Vector2(1.1, 0.4))
-	_burial_draw.draw_circle(Vector2.ZERO, mound_r, dirt_light)
-	_burial_draw.draw_arc(Vector2.ZERO, mound_r, 0.0, TAU, 24, dirt_dark, 3.0)
-	_burial_draw.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-
-# ── HUD ───────────────────────────────────────────────────────────────────────
-func _draw_hud() -> void:
-	if _font == null: return
-	var jk: String = player.job.get("key", "")
-	var job: Dictionary = player.job
-
-	# 스킬 아이콘 4개 [P, Q, E, R]
-	var xs    := [HUD_P_X, HUD_Q_X, HUD_E_X, HUD_R_X]
-	var keys  := ["P", "Q", "E", "R"]
-	var names := [job.get("passive_name","P"), job.get("q_name","Q"), job.get("e_name","E"), job.get("r_name","R")]
-	var cds   := [float(job.get("passive_cd",0.0)), float(job.get("q_cd",0.0)), float(job.get("e_cd",0.0)), float(job.get("r_cd",0.0))]
-	# Darby: passive CD는 패시브 타이머, Q CD는 매 시전마다 스탯 기반으로 동적 재계산되므로
-	# job.get("q_cd")의 고정값(0.0) 대신 마지막으로 뽑힌 실제 쿨타임(q_cd_full)을 분모로 쓴다.
-	var p_cd_rem: float = player.passive_cd_rem
-	if jk == "darby":
-		p_cd_rem = player._darby_passive_timer; cds[0] = 10.0
-		cds[1] = player.q_cd_full
-	var rems  := [p_cd_rem, player.q_cd_rem, player.e_cd_rem, player.r_cd_rem]
-
-	for i in range(4):
-		var ix := float(xs[i]); var iy := float(HUD_Y); var sz := float(HUD_SZ)
-		_hud.draw_rect(Rect2(ix, iy, sz, sz), Color(0.137, 0.137, 0.165))
-		_draw_rounded_border(Rect2(ix, iy, sz, sz), Color(0.333, 0.333, 0.392), 2.0, 10.0)
-		_hud.draw_string(_font, Vector2(ix + 6.0, iy + 20.0), keys[i],
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.922, 0.922, 0.941))
-		# 스킬명이 박스 폭을 넘으면 잘라내는 대신 줄바꿈해 전체 이름이 보이게 한다.
-		var name_lines: Array = _wrap_text(names[i] as String, _font, 10, sz - 6.0)
-		var name_y := iy + 28.0
-		for nl in name_lines:
-			_hud.draw_string(_font, Vector2(ix + 3.0, name_y), nl,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(0.75, 0.82, 1.0, 0.8))
-			name_y += 11.0
-		var cd: float = cds[i]; var rem: float = rems[i]
-		if cd > 0.0 and rem > 0.0:
-			_draw_radial_cd(ix, iy, sz, minf(1.0, rem / cd))
-			_hud.draw_string(_font, Vector2(ix + sz/2.0 - 12.0, iy + sz/2.0 + 8.0),
-				"%.1f" % rem, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 1, 0.8))
-
-	# 활성 스킬 테두리
-	if jk == "swordsman":
-		if player.q_buff_time > 0.0: _draw_rounded_border(Rect2(HUD_Q_X-3,HUD_Y-3,HUD_SZ+6,HUD_SZ+6),Color(1.0,0.863,0.353),3.0,12.0)
-		if player.r_active:          _draw_rounded_border(Rect2(HUD_R_X-3,HUD_Y-3,HUD_SZ+6,HUD_SZ+6),Color(0.353,0.863,1.0),3.0,12.0)
-	elif jk == "wind_archer":
-		if player.wind_q_active:
-			_draw_rounded_border(Rect2(HUD_Q_X-3,HUD_Y-3,HUD_SZ+6,HUD_SZ+6),Color(1.0,0.863,0.353),3.0,12.0)
-			_hud.draw_string(_font, Vector2(HUD_Q_X+4.0,HUD_Y+HUD_SZ-6.0),
-				"%.1fs" % player.wind_q_time, HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color(0.6,1.0,0.9))
-		if player.wind_e_active:
-			_draw_rounded_border(Rect2(HUD_E_X-3,HUD_Y-3,HUD_SZ+6,HUD_SZ+6),Color(0.95,0.82,0.35),3.0,12.0)
-	elif jk == "darby":
-		if player.darby_r_active:
-			_draw_rounded_border(Rect2(HUD_R_X-3,HUD_Y-3,HUD_SZ+6,HUD_SZ+6),Color(1.0,0.314,0.392),3.0,12.0)
-			_hud.draw_string(_font, Vector2(HUD_R_X+4.0,HUD_Y+HUD_SZ-6.0),
-				"%.1fs" % player.darby_r_time, HORIZONTAL_ALIGNMENT_LEFT,-1,12,Color(1.0,0.7,0.8))
-	elif jk == "shoveler":
-		if player.shovel_r_armed:
-			_draw_rounded_border(Rect2(HUD_R_X-3,HUD_Y-3,HUD_SZ+6,HUD_SZ+6),Color(1.0,0.863,0.353),3.0,12.0)
-
-	# Darby 타겟팅 원
-	if targeting_active and jk == "darby":
-		var pctr := Vector2(player.rect.get_center()) + Vector2(-cam_x, -cam_y)
-		_hud.draw_arc(pctr, targeting_radius, 0.0, TAU, 48, Color(0.314, 0.627, 1.0, 0.235), 3.0)
-		_hud.draw_arc(pctr, targeting_radius, 0.0, TAU, 48, Color(0.314, 0.627, 1.0, 0.588), 2.0)
-
-	# HP 바
-	var left := float(HUD_P_X); var right := float(HUD_R_X + HUD_SZ)
-	var bw := right - left; var by := float(HUD_Y + HUD_SZ + 10)
-	_hud.draw_rect(Rect2(left, by, bw, 22.0), Color(0.071, 0.071, 0.078))
-	_draw_rounded_border(Rect2(left, by, bw, 22.0), Color(0.275, 0.275, 0.314), 2.0, 8.0)
-	if player.max_hp > 0.0:
-		var ratio := maxf(0.0, minf(1.0, player.hp / player.max_hp))
-		_hud.draw_rect(Rect2(left+2.0, by+2.0, (bw-4.0)*ratio, 18.0), Color(0.235, 0.784, 0.353))
-	_hud.draw_string(_font, Vector2(left+bw/2.0-30.0, by+16.0),
-		"%d / %d" % [int(max(0.0,player.hp)), int(player.max_hp)],
-		HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color(0.941,0.941,0.941))
-
-	# Darby 스탯 표시 (현재 랜덤 스탯)
-	if jk == "darby":
-		var stat_txt := "ATK %.0f  HP %.0f  RNG %.0f  SPD %.0f  AS %.2f  [%.1fs후 재롤]" % [
-			player.attack, player.max_hp, player.attack_range, player.move_speed, player.attack_speed,
-			maxf(0.0, player._darby_passive_timer)]
-		_hud.draw_string(_font, Vector2(left, by + 30.0), stat_txt,
-			HORIZONTAL_ALIGNMENT_LEFT,-1,13,Color(0.8,0.9,1.0,0.85))
-
-	# 누적 피해
-	_hud.draw_string(_font, Vector2(SCR_W/2.0-110.0,36.0),
-		"훈련 더미  누적 피해: %d" % int(dummy.total_damage_taken),
-		HORIZONTAL_ALIGNMENT_LEFT,-1,17,Color(1.0,0.871,0.471))
-
-	# Wind 패시브 스택
-	if jk == "wind_archer" and player.wind_passive_stacks > 0:
-		_hud.draw_string(_font, Vector2(16.0,60.0),
-			"바람 패시브: %d스택 (%d/15타)" % [player.wind_passive_stacks, player.wind_passive_hits],
-			HORIZONTAL_ALIGNMENT_LEFT,-1,15,Color(0.471,0.941,0.839))
-
-	# Shoveler 스택
-	if jk == "shoveler":
-		var stk: int = dummy.shovel_stack_count()
-		if stk > 0:
-			_hud.draw_string(_font, Vector2(16.0,60.0),
-				"삽질 스택: %d / 5" % stk, HORIZONTAL_ALIGNMENT_LEFT,-1,15,Color(0.8,0.6,0.3))
-
-	# 피해 텍스트
-	for d in dmg_texts:
-		_hud.draw_string(_font, Vector2(float(d["wx"])-cam_x, float(d["wy"])-cam_y),
-			d["text"], HORIZONTAL_ALIGNMENT_LEFT,-1,16,Color(1.0,0.863,0.471))
-
-	# 사망 오버레이
-	if player.dead:
-		_hud.draw_rect(Rect2(0,0,SCR_W,SCR_H), Color(0,0,0,0.55))
-		_hud.draw_string(_font, Vector2(SCR_W/2.0-90.0,SCR_H/2.0),
-			"부활 대기: %.1f초" % maxf(0.0,player.respawn_time),
-			HORIZONTAL_ALIGNMENT_LEFT,-1,38,Color.WHITE)
-
-	# 힌트
-	_hud.draw_string(_font, Vector2(16.0,20.0), "ESC 메뉴  F2 즉사테스트",
-		HORIZONTAL_ALIGNMENT_LEFT,-1,14,Color(0.6,0.6,0.65))
-	var hint := "WASD/방향키 이동  마우스 조준  Q/E/R 스킬  좌클릭 기본공격"
-	if jk == "darby": hint += "  [Q: 1회 눌러 타겟팅, 재클릭으로 확인]"
-	_hud.draw_string(_font, Vector2(16.0,SCR_H-18.0), hint,
-		HORIZONTAL_ALIGNMENT_LEFT,-1,13,Color(0.5,0.5,0.55))
-
-	# 스킬 툴팁 — 스킬 아이콘 위에 마우스를 올렸을 때 (_update_tooltip이 상태를 갱신)
-	if _tooltip_visible:
-		_draw_tooltip(_tooltip_pos, _tooltip_lines)
-
-# ── HUD 보조 ─────────────────────────────────────────────────────────────────
-func _draw_radial_cd(ix: float, iy: float, sz: float, pct: float) -> void:
-	if pct <= 0.0: return
-	var cx := ix+sz/2.0; var cy := iy+sz/2.0; var r := sz/2.0
-	_hud.draw_circle(Vector2(cx,cy), r, Color(0,0,0,0.627))
-	var clear := (1.0 - pct) * TAU
-	if clear > 0.001:
-		var start := -PI/2.0; var steps: int = max(16, int(clear*20.0))
-		var pts := PackedVector2Array(); pts.append(Vector2(cx,cy))
-		for s in range(steps+1):
-			var a := start + float(s)*(clear/float(steps))
-			pts.append(Vector2(cx+cos(a)*r, cy+sin(a)*r))
-		_hud.draw_colored_polygon(pts, Color(0.137,0.137,0.165,0.9))
-
-func _draw_rounded_border(rect: Rect2, col: Color, width: float, radius: float) -> void:
-	var x := rect.position.x; var y := rect.position.y
-	var w := rect.size.x; var h := rect.size.y
-	var rr: float = min(radius, min(w,h)/2.0)
-	_hud.draw_line(Vector2(x+rr,y),   Vector2(x+w-rr,y),   col, width)
-	_hud.draw_line(Vector2(x+rr,y+h), Vector2(x+w-rr,y+h), col, width)
-	_hud.draw_line(Vector2(x,y+rr),   Vector2(x,y+h-rr),   col, width)
-	_hud.draw_line(Vector2(x+w,y+rr), Vector2(x+w,y+h-rr), col, width)
-	_hud.draw_arc(Vector2(x+rr,  y+rr),   rr, PI,     PI*1.5, 8, col, width)
-	_hud.draw_arc(Vector2(x+w-rr,y+rr),   rr, PI*1.5, TAU,    8, col, width)
-	_hud.draw_arc(Vector2(x+rr,  y+h-rr), rr, PI*0.5, PI,     8, col, width)
-	_hud.draw_arc(Vector2(x+w-rr,y+h-rr), rr, 0.0,    PI*0.5, 8, col, width)
-
-# ── 툴팁 그리기 — 원본 Python Tooltip.draw() 1:1 이식 ──────────────────────
-const TOOLTIP_MAX_WIDTH := 300.0   ## 제목/설명 텍스트가 이 폭을 넘으면 자동 줄바꿈
-
-## 공백 기준으로 우선 줄을 나누고, 공백이 없는 긴 덩어리(스킬명 등)는 글자 단위로
-## 강제 개행해 max_width(px) 안에 들어가게 한다 — 잘라내지 않고 유동적으로 접는다.
-func _wrap_text(text: String, font: Font, font_size: int, max_width: float) -> Array:
-	var lines: Array = []
-	var words: PackedStringArray = text.split(" ")
-	var current := ""
-	for word in words:
-		var candidate: String = word if current.is_empty() else current + " " + word
-		if font.get_string_size(candidate, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x <= max_width:
-			current = candidate
-			continue
-		if not current.is_empty():
-			lines.append(current)
-			current = ""
-		if font.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x <= max_width:
-			current = word
-			continue
-		# 단어 자체가 max_width보다 넓다(공백 없는 긴 한글 이름 등) — 글자 단위로 강제 개행
-		var chunk := ""
-		for ch in word:
-			var test: String = chunk + ch
-			if font.get_string_size(test, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > max_width and not chunk.is_empty():
-				lines.append(chunk)
-				chunk = ch
-			else:
-				chunk = test
-		current = chunk
-	if not current.is_empty():
-		lines.append(current)
-	if lines.is_empty(): lines.append("")
-	return lines
-
-func _draw_tooltip(anchor: Vector2, lines: Array) -> void:
-	if _font == null or lines.is_empty():
-		return
-
-	var title: String = String(lines[0])
-	var desc: String  = String(lines[1]) if lines.size() > 1 else ""
-	var title_size := 18
-	var desc_size  := 16
-
-	var title_lines: Array = _wrap_text(title, _font, title_size, TOOLTIP_MAX_WIDTH)
-	var desc_lines: Array  = _wrap_text(desc, _font, desc_size, TOOLTIP_MAX_WIDTH) if desc != "" else []
-
-	# 크기 측정 — 실제 줄바꿈된 각 줄의 폭/높이 기준으로 박스를 잡는다.
-	var tw := 0.0
-	var th := 8.0
-	for l in title_lines:
-		tw = maxf(tw, _font.get_string_size(l, HORIZONTAL_ALIGNMENT_LEFT, -1, title_size).x)
-		th += float(title_size) + 4.0
-	for l in desc_lines:
-		tw = maxf(tw, _font.get_string_size(l, HORIZONTAL_ALIGNMENT_LEFT, -1, desc_size).x)
-		th += float(desc_size) + 4.0
-	tw += 16.0; th += 8.0
-
-	# 위치: anchor 위쪽
-	var rx := anchor.x
-	var ry := anchor.y - th - 8.0
-	# 화면 밖 보정
-	rx = clampf(rx, 0.0, float(SCR_W) - tw)
-	ry = clampf(ry, 0.0, float(SCR_H) - th)
-
-	# 배경 — 원본 (20,20,24) fill + (110,110,130) border, border_radius=10
-	_hud.draw_rect(Rect2(rx, ry, tw, th), Color(0.078, 0.078, 0.094))
-	_draw_rounded_border(Rect2(rx, ry, tw, th), Color(0.431, 0.431, 0.510), 2.0, 10.0)
-
-	# 텍스트: 제목(18px) 줄들 → 본문(16px) 줄들
-	var cy := ry + 10.0
-	for l in title_lines:
-		_hud.draw_string(_font, Vector2(rx + 8.0, cy + float(title_size)),
-			l, HORIZONTAL_ALIGNMENT_LEFT, -1, title_size, Color(0.961, 0.961, 0.980))
-		cy += float(title_size) + 4.0
-	for l in desc_lines:
-		_hud.draw_string(_font, Vector2(rx + 8.0, cy + float(desc_size)),
-			l, HORIZONTAL_ALIGNMENT_LEFT, -1, desc_size, Color(0.961, 0.961, 0.980))
-		cy += float(desc_size) + 4.0
